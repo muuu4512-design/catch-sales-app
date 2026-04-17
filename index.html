@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>キャッチ売上ランキング</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f172a; --card: #111827; --accent: #3b82f6;
+      --accent-soft: rgba(59,130,246,0.15); --text: #f9fafb;
+      --sub: #9ca3af; --danger: #f97373;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      padding: 10px 10px calc(20px + env(safe-area-inset-bottom));
+      background: var(--bg); color: var(--text);
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      display: flex; justify-content: center;
+      min-height: 100vh;
+    }
+    .wrapper { width: 100%; max-width: 480px; }
+    .title { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
+    .subtitle { font-size: 13px; color: var(--sub); margin-bottom: 10px; }
+    .card {
+      background: var(--card); border-radius: 14px; padding: 14px 14px 12px;
+      margin-bottom: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+      border: 1px solid rgba(148,163,184,0.25);
+    }
+    .card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
+    .card-title { font-size: 16px; font-weight: 600; }
+    .card-caption { font-size: 11px; color: var(--sub); }
+    label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--sub); }
+    .field { margin-bottom: 12px; }
+    /* iOS ズーム防止: すべての入力を16px以上に */
+    input, select, textarea {
+      width: 100%; padding: 12px 12px; font-size: 16px; border-radius: 10px;
+      border: 1px solid #4b5563; background: #020617; color: var(--text);
+      outline: none; -webkit-appearance: none; appearance: none;
+      min-height: 48px;
+    }
+    input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    /* セレクトに矢印 */
+    select {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%239ca3af' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+    button {
+      width: 100%; padding: 14px; font-size: 16px; font-weight: 700;
+      border-radius: 999px; border: none;
+      background: linear-gradient(135deg, #2563eb, #22c55e);
+      color: #fff; cursor: pointer; margin-top: 4px;
+      min-height: 52px;
+      touch-action: manipulation;
+    }
+    button:active { transform: scale(0.98); opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    /* 保存ボタンをカード下部でスティッキーに */
+    .sticky-save {
+      position: sticky; bottom: 6px; z-index: 5; margin-top: 12px;
+      box-shadow: 0 8px 24px rgba(37,99,235,0.45);
+    }
+    /* 折りたたみカード */
+    details.card { padding: 0; overflow: hidden; }
+    details.card > summary {
+      padding: 16px 14px; cursor: pointer; list-style: none;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; user-select: none; min-height: 54px;
+    }
+    details.card > summary::-webkit-details-marker { display: none; }
+    details.card > summary::after {
+      content: "▾"; color: var(--sub); font-size: 14px;
+      transition: transform 0.2s; flex-shrink: 0;
+    }
+    details.card[open] > summary::after { transform: rotate(180deg); }
+    details.card > .card-body { padding: 0 14px 14px; }
+    details.card > summary .summary-title { font-size: 16px; font-weight: 600; }
+    details.card > summary .summary-caption { font-size: 11px; color: var(--sub); margin-left: 4px; }
+    #message { min-height: 18px; font-size: 12px; margin-top: 4px; }
+    #message.ok { color: #4ade80; }
+    #message.ng { color: var(--danger); }
+    .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--sub); margin-bottom: 4px; }
+    .week-label, .month-label, .daily-label { font-size: 12px; color: var(--sub); margin-bottom: 6px; }
+    .ranking-list { list-style: none; padding: 0; margin: 0; }
+    .ranking-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px; border-radius: 10px; margin-bottom: 6px;
+      background: rgba(15,23,42,0.7);
+      min-height: 48px;
+    }
+    .rank-badge {
+      min-width: 28px; height: 28px; text-align: center;
+      font-size: 14px; font-weight: 700; margin-right: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .rank-1 .rank-badge { background: rgba(250,204,21,0.2); color: #facc15; border-radius: 999px; }
+    .rank-2 .rank-badge { background: rgba(148,163,184,0.2); color: #e5e7eb; border-radius: 999px; }
+    .rank-3 .rank-badge { background: rgba(249,115,22,0.2); color: #fb923c; border-radius: 999px; }
+    .player-name { font-size: 15px; font-weight: 500; }
+    .amount { font-size: 15px; font-weight: 700; }
+    .helper { font-size: 11px; color: var(--sub); margin-top: 4px; }
+    .inactive-name { font-size: 14px; font-weight: 500; }
+    .inactive-info { font-size: 11px; color: var(--sub); }
+
+    /* ===== 店舗入力行 ===== */
+    .store-rows { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .store-row {
+      display: flex; align-items: center; gap: 12px;
+      background: #020617; border: 1px solid #4b5563; border-radius: 12px;
+      padding: 10px 14px; min-height: 60px;
+      transition: border-color 0.15s;
+    }
+    .store-row:focus-within { border-color: var(--accent); background: rgba(59,130,246,0.06); }
+    .store-label {
+      font-size: 16px; font-weight: 700; color: var(--accent);
+      min-width: 44px; flex-shrink: 0;
+    }
+    .store-input-wrap {
+      flex: 1; display: flex; align-items: baseline; gap: 4px; justify-content: flex-end;
+    }
+    .store-input {
+      flex: 1; min-width: 0; background: transparent; border: none;
+      color: var(--text); font-size: 22px; font-weight: 700; text-align: right;
+      padding: 0; outline: none; min-height: 0;
+      -moz-appearance: textfield;
+    }
+    .store-input::-webkit-inner-spin-button,
+    .store-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .store-input:focus { color: #4ade80; }
+    .store-input::placeholder { color: #374151; font-size: 18px; font-weight: 400; }
+    .store-yen { font-size: 14px; color: var(--sub); flex-shrink: 0; }
+    .store-total-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 4px 0; font-size: 12px; color: var(--sub);
+    }
+    .store-total-amt { font-size: 14px; font-weight: 600; color: #4ade80; }
+
+    /* ===== カレンダー ===== */
+    .cal-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .cal-nav-btn {
+      width: 44px; height: 44px; min-height: 44px; border-radius: 50%; border: none;
+      background: #374151; color: var(--text); font-size: 14px;
+      cursor: pointer; padding: 0; margin-top: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-nav-btn:active { background: #4b5563; }
+    .cal-month-label { font-size: 14px; font-weight: 600; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
+    .cal-dow { text-align: center; font-size: 10px; color: var(--sub); padding: 3px 0; }
+    .cal-dow.sun { color: #f97373; }
+    .cal-dow.sat { color: #60a5fa; }
+    .cal-cell {
+      border-radius: 6px; background: rgba(15,23,42,0.4);
+      padding: 4px 2px; min-height: 50px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .cal-cell.empty { background: transparent; }
+    .cal-cell.today { border: 1px solid var(--accent); }
+    .cal-cell.has-data { background: rgba(59,130,246,0.12); }
+    .cal-num { font-size: 10px; color: var(--sub); line-height: 1.8; }
+    .cal-cell.sun .cal-num { color: #f97373; }
+    .cal-cell.sat .cal-num { color: #60a5fa; }
+    .cal-amt { font-size: 8px; font-weight: 600; color: #4ade80; text-align: center; line-height: 1.3; }
+    .cal-store-row { font-size: 7px; color: #94a3b8; text-align: center; line-height: 1.4; white-space: nowrap; }
+    .cal-total { font-size: 12px; color: var(--sub); margin-top: 6px; text-align: right; }
+
+    /* ===== グラフ ===== */
+    .chart-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .chart-tab {
+      padding: 8px 18px; border-radius: 999px; border: 1px solid #4b5563;
+      background: transparent; color: var(--sub); font-size: 13px;
+      cursor: pointer; margin-top: 0; width: auto;
+      min-height: 38px;
+    }
+    .chart-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .chart-wrap { position: relative; }
+    #barChartWrap { display: none; }
+
+    /* ===== 日別売上（店舗内訳） ===== */
+    .daily-store-row {
+      display: flex; justify-content: space-between; flex-wrap: wrap;
+      gap: 2px 8px; padding: 2px 0;
+    }
+    .daily-store-chip {
+      font-size: 11px; color: var(--sub);
+      display: flex; gap: 3px;
+    }
+    .daily-store-chip .chip-name { color: var(--accent); font-weight: 600; }
+    .daily-store-chip .chip-amt { color: #cbd5e1; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- 入力 -->
+  <div class="card">
+    <div class="title">キャッチ売上入力</div>
+    <div id="today" class="subtitle"></div>
+    <div class="meta-row">
+      <div id="todayDow"></div>
+      <div>対象：日曜〜木曜の合計売上</div>
+    </div>
+    <div class="field">
+      <label for="playerSelect">プレイヤー</label>
+      <select id="playerSelect"></select>
+    </div>
+    <div class="field">
+      <label for="dateInput">日付（全曜日入力OK）</label>
+      <input id="dateInput" type="date">
+    </div>
+    <label style="margin-bottom:6px;">店舗別売上</label>
+    <div class="store-rows" id="storeRows"></div>
+    <div class="store-total-row">
+      <span>合計</span>
+      <span class="store-total-amt" id="storeTotalAmt">0 円</span>
+    </div>
+    <button id="submitBtn" class="sticky-save">この内容で保存</button>
+    <div id="message"></div>
+  </div>
+
+  <!-- 半月ランキング -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">今の期間のランキング（半月）</div>
+      <div class="card-caption">日〜木の合計</div>
+    </div>
+    <div id="weekLabel" class="week-label"></div>
+    <ul id="rankingList" class="ranking-list"></ul>
+  </div>
+
+  <!-- 月間ランキング -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">今月の売上</div>
+      <div class="card-caption">日〜土すべて</div>
+    </div>
+    <div id="monthLabel" class="month-label"></div>
+    <ul id="monthRankingList" class="ranking-list"></ul>
+  </div>
+
+  <!-- グラフ（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">グラフ</span> <span class="summary-caption" id="chartPeriodCaption"></span></span>
+    </summary>
+    <div class="card-body">
+      <div class="chart-tabs">
+        <button class="chart-tab active" onclick="switchChart('pie',this)">円グラフ</button>
+        <button class="chart-tab" onclick="switchChart('bar',this)">棒グラフ</button>
+      </div>
+      <div id="pieChartWrap" class="chart-wrap"><canvas id="pieChart"></canvas></div>
+      <div id="barChartWrap" class="chart-wrap"><canvas id="barChart"></canvas></div>
+      <div class="field" style="margin-top:10px;">
+        <select id="chartPeriodSelect" style="width:100%;"></select>
+      </div>
+    </div>
+  </details>
+
+  <!-- カレンダー（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">カレンダー</span> <span class="summary-caption">日別売上</span></span>
+    </summary>
+    <div class="card-body">
+      <div class="field">
+        <select id="calendarPlayerSelect">
+          <option value="全員">全員合計</option>
+        </select>
+      </div>
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="changeCalMonth(-1)">&#9664;</button>
+        <div class="cal-month-label" id="calMonthLabel">読み込み中…</div>
+        <button class="cal-nav-btn" onclick="changeCalMonth(1)">&#9654;</button>
+      </div>
+      <div id="calGrid" class="cal-grid"></div>
+      <div id="calTotal" class="cal-total"></div>
+    </div>
+  </details>
+
+  <!-- 過去の期間（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">過去の半月</span> <span class="summary-caption">選択して表示</span></span>
+    </summary>
+    <div class="card-body">
+      <select id="weekSelect" style="width:100%;"></select>
+      <div class="helper">売上が登録された期間だけ表示される．</div>
+    </div>
+  </details>
+
+  <!-- 月セレクト（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">過去の月</span> <span class="summary-caption">選択して表示</span></span>
+    </summary>
+    <div class="card-body">
+      <select id="monthSelect" style="width:100%;"></select>
+      <div class="helper">売上が登録された月だけ表示される．</div>
+    </div>
+  </details>
+
+  <!-- プレイヤー別日別売上（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">プレイヤー別 日別売上</span></span>
+    </summary>
+    <div class="card-body">
+      <div class="field">
+        <label for="dailyPlayerSelect">プレイヤー</label>
+        <select id="dailyPlayerSelect"></select>
+      </div>
+      <div class="field">
+        <label for="dailyMonthSelect">月</label>
+        <select id="dailyMonthSelect"></select>
+      </div>
+      <div id="dailySummary" class="daily-label"></div>
+      <ul id="dailySalesList" class="ranking-list"></ul>
+    </div>
+  </details>
+
+  <!-- 24時間未入力（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">24時間入力なし</span> <span class="summary-caption">全員分</span></span>
+    </summary>
+    <div class="card-body">
+      <ul id="inactiveList" class="ranking-list"></ul>
+    </div>
+  </details>
+
+</div>
+<script>
+  var STORES = ["ごち", "どす", "ごろ", "うお"];
+
+  function pad2(n){ return String(n).padStart(2,"0"); }
+  function fmtDate(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+  function halfMonthEnd(start){
+    return start.getDate()<=15
+      ? new Date(start.getFullYear(),start.getMonth(),15)
+      : new Date(start.getFullYear(),start.getMonth()+1,0);
+  }
+  function fmtShort(v){
+    if(!v) return "";
+    if(v>=100000) return (v/10000).toFixed(1)+"万";
+    if(v>=10000)  return Math.round(v/1000)+"K";
+    return v.toLocaleString();
+  }
+
+  /* ===== 店舗別入力 ===== */
+  function buildStoreRows(){
+    var wrap = document.getElementById("storeRows");
+    wrap.innerHTML = "";
+    STORES.forEach(function(store){
+      var row = document.createElement("div");
+      row.className = "store-row";
+
+      var lbl = document.createElement("span");
+      lbl.className = "store-label";
+      lbl.textContent = store;
+
+      var inputWrap = document.createElement("div");
+      inputWrap.className = "store-input-wrap";
+
+      var inp = document.createElement("input");
+      inp.type = "number";
+      inp.inputMode = "numeric";
+      inp.min = "0";
+      inp.step = "1";
+      inp.placeholder = "0";
+      inp.className = "store-input";
+      inp.id = "storeInput-" + store;
+      inp.addEventListener("input", updateStoreTotals);
+
+      var yen = document.createElement("span");
+      yen.className = "store-yen";
+      yen.textContent = "円";
+
+      inputWrap.appendChild(inp);
+      inputWrap.appendChild(yen);
+      row.appendChild(lbl);
+      row.appendChild(inputWrap);
+      wrap.appendChild(row);
+    });
+  }
+
+  function getStoreAmounts(){
+    var obj = {};
+    STORES.forEach(function(s){
+      var el = document.getElementById("storeInput-" + s);
+      obj[s] = el ? (parseInt(el.value, 10) || 0) : 0;
+    });
+    return obj;
+  }
+
+  function updateStoreTotals(){
+    var total = STORES.reduce(function(s,k){
+      var el = document.getElementById("storeInput-" + k);
+      return s + (el ? (parseInt(el.value, 10) || 0) : 0);
+    }, 0);
+    document.getElementById("storeTotalAmt").textContent = total > 0 ? total.toLocaleString() + " 円" : "0 円";
+  }
+
+  function resetStoreInputs(){
+    STORES.forEach(function(s){
+      var el = document.getElementById("storeInput-" + s);
+      if(el) el.value = "";
+    });
+    updateStoreTotals();
+  }
+
+  /* 今日 */
+  function setToday(){
+    var d = new Date();
+    var wd = ["日","月","火","水","木","金","土"][d.getDay()];
+    var s = fmtDate(d);
+    document.getElementById("today").textContent = "今日 " + s;
+    document.getElementById("todayDow").textContent = "曜日：" + wd + "曜";
+    document.getElementById("dateInput").value = s;
+  }
+
+  /* ===== GAS REST API ===== */
+  var API_BASE = 'https://script.google.com/macros/s/AKfycbz6NovgFy26QEZ5_GI3ci0nu97sP-O0MdjK8GMIUezy3GgCRbPEwqVYka4RLuvjO_RIwQ/exec';
+  function api(action, params, onSuccess, onError){
+    var url = API_BASE + '?action=' + encodeURIComponent(action);
+    if(params){ Object.keys(params).forEach(function(k){ url += '&' + k + '=' + encodeURIComponent(params[k]); }); }
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data && data.error){ if(onError) onError({message: data.error}); else console.error(data.error); }
+        else { onSuccess(data); }
+      })
+      .catch(function(e){ if(onError) onError({message: String(e)}); else console.error(e); });
+  }
+
+  /* プレイヤー */
+  function loadPlayers(){
+    api('getPlayers', {}, function(players){
+      var s1 = document.getElementById("playerSelect");
+      var s2 = document.getElementById("dailyPlayerSelect");
+      var sc = document.getElementById("calendarPlayerSelect");
+      s1.innerHTML = ""; s2.innerHTML = "";
+      while(sc.options.length > 1) sc.remove(1);
+      if(!players || !players.length){
+        var o = document.createElement("option");
+        o.textContent = "プレイヤー未登録";
+        s1.appendChild(o); s1.disabled = true;
+        s2.appendChild(o.cloneNode(true)); s2.disabled = true; return;
+      }
+      s1.disabled = false; s2.disabled = false;
+      players.forEach(function(p, i){
+        [s1, s2, sc].forEach(function(sel){
+          var o = document.createElement("option");
+          o.value = p.name; o.textContent = p.name;
+          if(sel !== sc && i === 0) o.selected = true;
+          sel.appendChild(o);
+        });
+      });
+      loadMonthOptions();
+      fetchPlayerDailySales();
+    });
+  }
+
+  /* ランキング共通 */
+  function appendRankItem(list, row, i){
+    var li = document.createElement("li"); li.className = "ranking-item rank-" + (i+1);
+    var left = document.createElement("div"); left.style.cssText = "display:flex;align-items:center";
+    var badge = document.createElement("div"); badge.className = "rank-badge"; badge.textContent = i+1;
+    var name = document.createElement("div"); name.className = "player-name"; name.textContent = row.name;
+    left.appendChild(badge); left.appendChild(name);
+    var amt = document.createElement("div"); amt.className = "amount";
+    amt.textContent = row.total_amount.toLocaleString() + " 円";
+    li.appendChild(left); li.appendChild(amt); list.appendChild(li);
+  }
+
+  /* 半月ランキング */
+  function renderRanking(data){
+    var list = document.getElementById("rankingList");
+    var lbl = document.getElementById("weekLabel");
+    list.innerHTML = "";
+    var sd = new Date(data.week_start + "T00:00:00");
+    var ed = halfMonthEnd(sd);
+    lbl.textContent = "対象期間：" + data.week_start + " ～ " + fmtDate(ed);
+    data.ranking.forEach(function(r, i){ appendRankItem(list, r, i); });
+  }
+  function loadCurrentWeekRanking(){
+    api('getCurrentWeekRanking', {}, function(data){
+      renderRanking(data);
+      loadCharts(data.week_start);
+    });
+  }
+  function loadWeekOptions(){
+    api('getWeeks', {}, function(weeks){
+      var sw = document.getElementById("weekSelect");
+      var sc = document.getElementById("chartPeriodSelect");
+      sw.innerHTML = ""; sc.innerHTML = "";
+      if(!weeks || !weeks.length){
+        var o = document.createElement("option"); o.textContent = "まだデータがない．";
+        sw.appendChild(o); sw.disabled = true;
+        sc.appendChild(o.cloneNode(true)); sc.disabled = true; return;
+      }
+      sw.disabled = false; sc.disabled = false;
+      weeks.forEach(function(w, i){
+        [sw, sc].forEach(function(sel){
+          var o = document.createElement("option");
+          o.value = w.week_start; o.textContent = w.label; if(i === 0) o.selected = true;
+          sel.appendChild(o);
+        });
+      });
+      sw.onchange = function(){ api('getRankingByWeek', {week_start: sw.value}, renderRanking); };
+      sc.onchange = function(){ loadCharts(sc.value); };
+    });
+  }
+
+  /* 月間ランキング */
+  function renderMonthRanking(data){
+    var list = document.getElementById("monthRankingList");
+    var lbl = document.getElementById("monthLabel");
+    list.innerHTML = "";
+    var p = data.month.split("-"); lbl.textContent = p[0] + "年" + p[1] + "月";
+    data.ranking.forEach(function(r, i){ appendRankItem(list, r, i); });
+  }
+  function loadCurrentMonthRanking(){
+    api('getCurrentMonthRanking', {}, renderMonthRanking);
+  }
+  function loadMonthOptions(){
+    api('getMonthsList', {}, function(months){
+      var sm = document.getElementById("monthSelect");
+      var sd = document.getElementById("dailyMonthSelect");
+      sm.innerHTML = ""; sd.innerHTML = "";
+      if(!months || !months.length){
+        var o = document.createElement("option"); o.textContent = "まだデータがない．";
+        sm.appendChild(o); sm.disabled = true;
+        sd.appendChild(o.cloneNode(true)); sd.disabled = true; return;
+      }
+      sm.disabled = false; sd.disabled = false;
+      months.forEach(function(m, i){
+        [sm, sd].forEach(function(sel){
+          var o = document.createElement("option");
+          o.value = m.month; o.textContent = m.label; if(i === 0) o.selected = true;
+          sel.appendChild(o);
+        });
+      });
+      sm.onchange = function(){ api('getMonthlyRanking', {month: sm.value}, renderMonthRanking); };
+      sd.onchange = fetchPlayerDailySales;
+      fetchPlayerDailySales();
+    });
+  }
+
+  /* 24時間未入力 */
+  function renderInactive(data){
+    var list = document.getElementById("inactiveList"); list.innerHTML = "";
+    if(!data || !data.inactive || !data.inactive.length){
+      var li = document.createElement("li"); li.className = "ranking-item";
+      li.textContent = "全刱24時間以内に入力あり．"; list.appendChild(li); return;
+    }
+    data.inactive.forEach(function(row){
+      var li = document.createElement("li"); li.className = "ranking-item";
+      var l = document.createElement("div"); l.className = "inactive-name"; l.textContent = row.name;
+      var r = document.createElement("div"); r.className = "inactive-info";
+      if(!row.last_timestamp){ r.textContent = "まだ一度も入力なし"; }
+      else{
+        var ts = new Date(row.last_timestamp);
+        r.textContent = "最終：" + fmtDate(ts) + " " + pad2(ts.getHours()) + ":" + pad2(ts.getMinutes());
+      }
+      li.appendChild(l); li.appendChild(r); list.appendChild(li);
+    });
+  }
+  function loadInactivePlayers(){
+    api('getInactivePlayers24h', {}, renderInactive);
+  }
+
+  /* プレイヤー別日別売上（店舗内訳付き） */
+  function renderPlayerDailySales(data){
+    var list = document.getElementById("dailySalesList");
+    var sum = document.getElementById("dailySummary");
+    list.innerHTML = "";
+    if(!data || !data.days){ sum.textContent = "データがない．"; return; }
+    var p = data.month.split("-");
+    sum.textContent = data.player + " の " + p[0] + "年" + p[1] + "月 合計 " + data.total.toLocaleString() + " 円";
+    if(!data.days.length){
+      var li = document.createElement("li"); li.className = "ranking-item";
+      li.textContent = "この月のデータはまだない．"; list.appendChild(li); return;
+    }
+    var stores = data.stores || STORES;
+    data.days.forEach(function(row){
+      var li = document.createElement("li");
+      li.className = "ranking-item";
+      li.style.cssText = "flex-direction:column;align-items:stretch;gap:4px;";
+      // ヘッダ行: 日付 + 合計
+      var header = document.createElement("div");
+      header.style.cssText = "display:flex;justify-content:space-between;align-items:center;";
+      var dp = row.date.split("-");
+      var dateDiv = document.createElement("div"); dateDiv.className = "daily-item-main";
+      dateDiv.textContent = dp[1] + "/" + dp[2] + "（" + row.weekday + "）";
+      var totalDiv = document.createElement("div"); totalDiv.className = "amount";
+      totalDiv.textContent = row.total.toLocaleString() + " 円";
+      header.appendChild(dateDiv); header.appendChild(totalDiv);
+      li.appendChild(header);
+      // 店舗内訳
+      if(row.stores){
+        var storeWrap = document.createElement("div"); storeWrap.className = "daily-store-row";
+        stores.forEach(function(s){
+          var amt = row.stores[s] || 0;
+          var chip = document.createElement("div"); chip.className = "daily-store-chip";
+          var nm = document.createElement("span"); nm.className = "chip-name"; nm.textContent = s;
+          var av = document.createElement("span"); av.className = "chip-amt";
+          av.textContent = amt > 0 ? amt.toLocaleString() : "−";
+          chip.appendChild(nm); chip.appendChild(av);
+          storeWrap.appendChild(chip);
+        });
+        li.appendChild(storeWrap);
+      }
+      list.appendChild(li);
+    });
+  }
+  function fetchPlayerDailySales(){
+    var p = document.getElementById("dailyPlayerSelect").value;
+    var m = document.getElementById("dailyMonthSelect").value;
+    if(!p || !m) return;
+    api('getPlayerDailySales', {player: p, month: m}, renderPlayerDailySales);
+  }
+
+  /* 売上保存 */
+  function submitSale(){
+    var player = document.getElementById("playerSelect").value;
+    var date = document.getElementById("dateInput").value;
+    var msg = document.getElementById("message");
+    msg.textContent = ""; msg.className = "";
+    if(!player || !date){ msg.textContent = "日付とプレイヤーを選択して．"; msg.className = "ng"; return; }
+    var amounts = getStoreAmounts();
+    var total = STORES.reduce(function(s, k){ return s + (amounts[k] || 0); }, 0);
+    if(total <= 0){ msg.textContent = "少なくとも1店舗の金額を入力して．"; msg.className = "ng"; return; }
+    document.getElementById("submitBtn").disabled = true;
+    msg.textContent = "保存中…"; msg.className = "";
+    api('submitDailySales', {date: date, player: player, amounts: JSON.stringify(amounts)},
+      function(res){
+        msg.textContent = (typeof res === 'string') ? res : '保存しました'; msg.className = "ok";
+        resetStoreInputs();
+        document.getElementById("submitBtn").disabled = false;
+        loadCurrentWeekRanking(); loadWeekOptions();
+        loadCurrentMonthRanking(); loadMonthOptions();
+        loadInactivePlayers(); loadCalendar();
+      },
+      function(err){
+        msg.textContent = "エラー：" + err.message; msg.className = "ng";
+        document.getElementById("submitBtn").disabled = false;
+      }
+    );
+  }
+  document.getElementById("submitBtn").addEventListener("click", submitSale);
+
+  /* グラフ */
+  var COLORS = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+  var pieInst = null, barInst = null;
+  function switchChart(type, btn){
+    document.querySelectorAll(".chart-tab").forEach(function(b){ b.classList.remove("active"); });
+    btn.classList.add("active");
+    document.getElementById("pieChartWrap").style.display = type === "pie" ? "block" : "none";
+    document.getElementById("barChartWrap").style.display = type === "bar" ? "block" : "none";
+  }
+  function loadCharts(key){
+    var sd = new Date(key + "T00:00:00"), ed = halfMonthEnd(sd);
+    document.getElementById("chartPeriodCaption").textContent = key + "～" + fmtDate(ed);
+    api('getRankingByWeek', {week_start: key}, function(data){
+      if(pieInst){ pieInst.destroy(); pieInst = null; }
+      var labels = [], vals = [], colors = [];
+      data.ranking.forEach(function(r, i){ if(r.total_amount > 0){ labels.push(r.name); vals.push(r.total_amount); colors.push(COLORS[i % COLORS.length]); } });
+      if(!vals.length) return;
+      pieInst = new Chart(document.getElementById("pieChart").getContext("2d"),{
+        type: "doughnut",
+        data: { labels: labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 2, borderColor: "#111827" }] },
+        options: { responsive: true, plugins: {
+          legend: { position: "bottom", labels: { color: "#f9fafb", font: {size: 12}, padding: 10 } },
+          tooltip: { callbacks: { label: function(c){ return c.label + ": \xa5" + c.parsed.toLocaleString(); } } }
+        }}
+      });
+    });
+    api('getBarChartData', {week_start: key}, function(data){
+      if(barInst){ barInst.destroy(); barInst = null; }
+      if(!data || !data.dates || !data.dates.length) return;
+      var labels = data.dates.map(function(d){
+        var p = d.split("-");
+        var wd = ["日","月","火","水","木","金","土"][new Date(d + "T00:00:00").getDay()];
+        return parseInt(p[1]) + "/" + parseInt(p[2]) + "(" + wd + ")";
+      });
+      var datasets = data.players.map(function(pl, i){
+        return { label: pl, data: data.dates.map(function(d){ return data.breakdown[d][pl] || 0; }),
+          backgroundColor: COLORS[i % COLORS.length], borderRadius: 3, borderWidth: 0 };
+      });
+      barInst = new Chart(document.getElementById("barChart").getContext("2d"),{
+        type: "bar", data: { labels: labels, datasets: datasets },
+        options: {
+          responsive: true,
+          scales: {
+            x: { stacked: true, ticks: { color: "#9ca3af", font: {size: 10} }, grid: { color: "rgba(255,255,255,0.05)" } },
+            y: { stacked: true, ticks: { color: "#9ca3af", font: {size: 10}, callback: function(v){ return v >= 10000 ? Math.round(v/1000) + "K" : v; } }, grid: { color: "rgba(255,255,255,0.05)" } }
+          },
+          plugins: {
+            legend: { position: "bottom", labels: { color: "#f9fafb", font: {size: 11}, padding: 8 } },
+            tooltip: { callbacks: { label: function(c){ return c.dataset.label + ": \xa5" + c.parsed.y.toLocaleString(); } } }
+          }
+        }
+      });
+    });
+  }
+
+  /* カレンダー */
+  var _calY, _calM;
+  function initCalendar(){ var n = new Date(); _calY = n.getFullYear(); _calM = n.getMonth(); }
+  function changeCalMonth(d){ _calM += d; if(_calM < 0){ _calM = 11; _calY--; } if(_calM > 11){ _calM = 0; _calY++; } loadCalendar(); }
+  document.getElementById("calendarPlayerSelect").addEventListener("change", loadCalendar);
+  function loadCalendar(){
+    var mk = _calY + "-" + pad2(_calM + 1);
+    var pl = document.getElementById("calendarPlayerSelect").value || "全員";
+    api('getCalendarData', {month: mk, player: pl}, renderCalendar);
+  }
+  function renderCalendar(data){
+    var grid = document.getElementById("calGrid");
+    var lbl = document.getElementById("calMonthLabel");
+    var totalEl = document.getElementById("calTotal");
+    grid.innerHTML = "";
+    var p = data.month.split("-");
+    lbl.textContent = p[0] + "年" + p[1] + "月";
+    var dows = ["日","月","火","水","木","金","土"];
+    dows.forEach(function(d, i){
+      var el = document.createElement("div");
+      el.className = "cal-dow" + (i === 0 ? " sun" : i === 6 ? " sat" : "");
+      el.textContent = d; grid.appendChild(el);
+    });
+    var year = parseInt(p[0]), month = parseInt(p[1]) - 1;
+    var firstDow = new Date(year, month, 1).getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var today = fmtDate(new Date());
+    var isIndividual = data.player && data.player !== "全員";
+    for(var i = 0; i < firstDow; i++){
+      var emp = document.createElement("div"); emp.className = "cal-cell empty"; grid.appendChild(emp);
+    }
+    var sum = 0;
+    for(var d = 1; d <= daysInMonth; d++){
+      var key = p[0] + "-" + p[1] + "-" + pad2(d);
+      var dow = new Date(year, month, d).getDay();
+      var amt = data.dailyTotals[key] || 0;
+      sum += amt;
+      var cell = document.createElement("div");
+      var cls = "cal-cell" + (dow === 0 ? " sun" : dow === 6 ? " sat" : "") + (key === today ? " today" : "") + (amt > 0 ? " has-data" : "");
+      cell.className = cls;
+      var num = document.createElement("div"); num.className = "cal-num"; num.textContent = d;
+      cell.appendChild(num);
+      if(amt > 0){
+        var a = document.createElement("div"); a.className = "cal-amt"; a.textContent = fmtShort(amt);
+        cell.appendChild(a);
+        // 個人選択時: 店舗別ミニ表示
+        if(isIndividual && data.dailyStores && data.dailyStores[key]){
+          var storeData = data.dailyStores[key];
+          var stores = data.stores || STORES;
+          stores.forEach(function(s){
+            var sv = storeData[s] || 0;
+            if(sv > 0){
+              var sr = document.createElement("div"); sr.className = "cal-store-row";
+              sr.textContent = s + " " + fmtShort(sv);
+              cell.appendChild(sr);
+            }
+          });
+        }
+      }
+      grid.appendChild(cell);
+    }
+    totalEl.textContent = (data.player || "全員") + " 月計：\xa5" + sum.toLocaleString();
+  }
+
+  /* 初期ロード */
+  buildStoreRows();
+  setToday();
+  initCalendar();
+  loadPlayers();
+  loadCurrentWeekRanking();
+  loadWeekOptions();
+  loadCurrentMonthRanking();
+  loadInactivePlayers();
+  loadCalendar();
+</script>
+</body>
+</html>
