@@ -195,6 +195,33 @@
     }
     .daily-store-chip .chip-name { color: var(--accent); font-weight: 600; }
     .daily-store-chip .chip-amt { color: #cbd5e1; }
+
+    /* ===== 行削除ボタン ===== */
+    .row-delete-btn {
+      background: transparent; border: 1px solid #7f1d1d; color: #fca5a5;
+      font-size: 11px; padding: 4px 10px; border-radius: 999px;
+      cursor: pointer; margin: 0; width: auto; min-height: 28px;
+      line-height: 1; white-space: nowrap;
+    }
+    .row-delete-btn:hover { background: rgba(127,29,29,0.25); }
+    .row-delete-btn:active { background: rgba(127,29,29,0.45); }
+    .daily-header-right { display: flex; align-items: center; gap: 10px; }
+
+    /* ===== 重複整理カード ===== */
+    .cleanup-note {
+      font-size: 11px; color: var(--sub); line-height: 1.5; margin-bottom: 10px;
+    }
+    .cleanup-danger {
+      background: #7f1d1d; border-color: #7f1d1d; color: #fff; font-weight: 600;
+    }
+    .cleanup-danger:active { background: #991b1b; }
+    #cleanupResult {
+      font-size: 12px; margin-top: 10px; padding: 8px;
+      background: rgba(15,23,42,0.5); border-radius: 6px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    #cleanupResult.ok { color: #4ade80; }
+    #cleanupResult.ng { color: #fca5a5; }
   </style>
 </head>
 <body>
@@ -323,6 +350,31 @@
       </div>
       <div id="dailySummary" class="daily-label"></div>
       <ul id="dailySalesList" class="ranking-list"></ul>
+      <div class="helper" style="margin-top:6px;">各行の <span style="color:#fca5a5;">削除</span> ボタンで、その日の入力をまとめて消せる．</div>
+    </div>
+  </details>
+
+  <!-- データ整理（折りたたみ） -->
+  <details class="card">
+    <summary>
+      <span><span class="summary-title">データ整理</span> <span class="summary-caption">重複・誤入力の削除</span></span>
+    </summary>
+    <div class="card-body">
+      <div class="cleanup-note">
+        店舗別入力に切り替える前の「古い形式の入力」が残っていると、合計が二重計上されることがある．<br>
+        プレイヤーと月を選び、まず「重複確認（ドライラン）」で件数を確認してから削除して．
+      </div>
+      <div class="field">
+        <label for="cleanupPlayerSelect">プレイヤー</label>
+        <select id="cleanupPlayerSelect"></select>
+      </div>
+      <div class="field">
+        <label for="cleanupMonthSelect">月</label>
+        <select id="cleanupMonthSelect"></select>
+      </div>
+      <button id="cleanupDryBtn" type="button">重複確認（ドライラン）</button>
+      <button id="cleanupRunBtn" type="button" class="cleanup-danger">重複を削除する</button>
+      <div id="cleanupResult"></div>
     </div>
   </details>
 
@@ -630,7 +682,13 @@
       dateDiv.textContent = dp[1] + "/" + dp[2] + "（" + row.weekday + "）";
       var totalDiv = document.createElement("div"); totalDiv.className = "amount";
       totalDiv.textContent = row.total.toLocaleString() + " 円";
-      header.appendChild(dateDiv); header.appendChild(totalDiv);
+      var delBtn = document.createElement("button"); delBtn.type = "button";
+      delBtn.className = "row-delete-btn"; delBtn.textContent = "削除";
+      delBtn.setAttribute("data-date", row.date);
+      delBtn.addEventListener("click", function(ev){ ev.stopPropagation(); onDeleteDay(row.date, row.total); });
+      var right = document.createElement("div"); right.className = "daily-header-right";
+      right.appendChild(totalDiv); right.appendChild(delBtn);
+      header.appendChild(dateDiv); header.appendChild(right);
       li.appendChild(header);
       // 店舗内訳
       if(row.stores){
@@ -655,6 +713,77 @@
     if(!p || !m) return;
     api('getPlayerDailySales', {player: p, month: m}, renderPlayerDailySales);
   }
+
+  /* 行削除（その日まるごと） */
+  function onDeleteDay(date, total){
+    var player = document.getElementById("dailyPlayerSelect").value;
+    if(!player) return;
+    var dp = date.split("-");
+    var label = dp[1] + "/" + dp[2];
+    var msg = player + " の " + label + "（合計 " + (total||0).toLocaleString() + " 円）を削除する？\nこの日の全店舗の入力がまとめて消える．";
+    if(!confirm(msg)) return;
+    api('deleteSaleEntry', {date: date, player: player},
+      function(res){
+        var n = (res && typeof res.deleted === 'number') ? res.deleted : 0;
+        alert(n + " 行削除した．");
+        fetchPlayerDailySales();
+        loadCurrentWeekRanking(); loadCurrentMonthRanking();
+        loadCalendar(); loadInactivePlayers();
+      },
+      function(err){ alert("エラー：" + err.message); }
+    );
+  }
+
+  /* データ整理（重複削除）カード */
+  function populateCleanupSelectors(){
+    var pSel = document.getElementById("cleanupPlayerSelect");
+    var srcP = document.getElementById("dailyPlayerSelect");
+    var mSel = document.getElementById("cleanupMonthSelect");
+    var srcM = document.getElementById("dailyMonthSelect");
+    if(pSel && srcP){
+      pSel.innerHTML = srcP.innerHTML;
+      if(srcP.value) pSel.value = srcP.value;
+    }
+    if(mSel && srcM){
+      mSel.innerHTML = srcM.innerHTML;
+      if(srcM.value) mSel.value = srcM.value;
+    }
+  }
+  function runCleanup(dryRun){
+    var player = document.getElementById("cleanupPlayerSelect").value;
+    var month = document.getElementById("cleanupMonthSelect").value;
+    var out = document.getElementById("cleanupResult");
+    if(!player || !month){ out.className = "ng"; out.textContent = "プレイヤーと月を選んで．"; return; }
+    if(!dryRun){
+      if(!confirm(player + " の " + month + " の「重複（旧形式）」行を削除する？\n新しい店舗別入力は残る．")) return;
+    }
+    out.className = ""; out.textContent = dryRun ? "確認中…" : "削除中…";
+    api('cleanupLegacy', {player: player, month: month, dryRun: dryRun ? '1' : '0'},
+      function(res){
+        var n = (res && typeof res.deleted === 'number') ? res.deleted : 0;
+        if(dryRun){
+          out.className = "ok";
+          out.textContent = "削除対象：" + n + " 行（まだ消していない）";
+        } else {
+          out.className = "ok";
+          out.textContent = n + " 行削除した．";
+          fetchPlayerDailySales();
+          loadCurrentWeekRanking(); loadCurrentMonthRanking();
+          loadCalendar();
+        }
+      },
+      function(err){ out.className = "ng"; out.textContent = "エラー：" + err.message; }
+    );
+  }
+  document.getElementById("cleanupDryBtn").addEventListener("click", function(){ runCleanup(true); });
+  document.getElementById("cleanupRunBtn").addEventListener("click", function(){ runCleanup(false); });
+  // When the Data-cleanup card opens, refresh selectors from Daily card
+  (function(){
+    var card = document.getElementById("cleanupPlayerSelect");
+    if(!card) return;
+    var details = card.closest("details");
+    if(details){ details.addEventListener("toggle", function(){ if(details.open) populateCleanupSelectors(); }); }
+  })();
 
   /* 売上保存 */
   function submitSale(){
@@ -745,7 +874,6 @@
   function initCalendar(){ var n = new Date(); _calY = n.getFullYear(); _calM = n.getMonth(); }
   function changeCalMonth(d){ _calM += d; if(_calM < 0){ _calM = 11; _calY--; } if(_calM > 11){ _calM = 0; _calY++; } loadCalendar(); }
   document.getElementById("calendarPlayerSelect").addEventListener("change", loadCalendar);
-  document.getElementById("dailyPlayerSelect").addEventListener("change", fetchPlayerDailySales);
   function loadCalendar(){
     var mk = _calY + "-" + pad2(_calM + 1);
     var pl = document.getElementById("calendarPlayerSelect").value || "全員";
@@ -804,6 +932,8 @@
     }
     totalEl.textContent = (data.player || "全員") + " 月計：\xa5" + sum.toLocaleString();
   }
+
+  document.getElementById("dailyPlayerSelect").addEventListener("change", fetchPlayerDailySales);
 
   /* 初期ロード */
   buildStoreRows();
