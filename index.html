@@ -106,6 +106,9 @@
     .helper { font-size: 11px; color: var(--sub); margin-top: 4px; }
     .inactive-name { font-size: 14px; font-weight: 500; }
     .inactive-info { font-size: 11px; color: var(--sub); }
+    .rank-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .proj { font-size: 11px; color: #60a5fa; white-space: nowrap; }
+    .proj span { font-weight: 700; }
 
     /* ===== 店舗入力行 ===== */
     .store-rows { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -466,15 +469,22 @@
   }
 
   /* ランキング共通 */
-  function appendRankItem(list, row, i){
+  function appendRankItem(list, row, i, projData){
     var li = document.createElement("li"); li.className = "ranking-item rank-" + (i+1);
     var left = document.createElement("div"); left.style.cssText = "display:flex;align-items:center";
     var badge = document.createElement("div"); badge.className = "rank-badge"; badge.textContent = i+1;
     var name = document.createElement("div"); name.className = "player-name"; name.textContent = row.name;
     left.appendChild(badge); left.appendChild(name);
+    var right = document.createElement("div"); right.className = "rank-right";
     var amt = document.createElement("div"); amt.className = "amount";
     amt.textContent = row.total_amount.toLocaleString() + " 円";
-    li.appendChild(left); li.appendChild(amt); list.appendChild(li);
+    right.appendChild(amt);
+    if(projData && projData.projected_total > 0){
+      var proj = document.createElement("div"); proj.className = "proj";
+      proj.innerHTML = "月末予測 <span>〜" + projData.projected_total.toLocaleString() + " 円</span>";
+      right.appendChild(proj);
+    }
+    li.appendChild(left); li.appendChild(right); list.appendChild(li);
   }
 
   /* 半月ランキング */
@@ -517,15 +527,32 @@
   }
 
   /* 月間ランキング */
-  function renderMonthRanking(data){
+  function renderMonthRanking(data, projMap){
     var list = document.getElementById("monthRankingList");
     var lbl = document.getElementById("monthLabel");
     list.innerHTML = "";
     var p = data.month.split("-"); lbl.textContent = p[0] + "年" + p[1] + "月";
-    data.ranking.forEach(function(r, i){ appendRankItem(list, r, i); });
+    data.ranking.forEach(function(r, i){
+      appendRankItem(list, r, i, projMap ? projMap[r.name] : null);
+    });
+  }
+  function loadMonthRankingWithProj(month, data){
+    var today = new Date();
+    var todayMonth = today.getFullYear() + "-" + pad2(today.getMonth()+1);
+    if(month === todayMonth){
+      api('getMonthlyProjection', {month: month}, function(projData){
+        var projMap = {};
+        (projData.projections || []).forEach(function(p){ projMap[p.name] = p; });
+        renderMonthRanking(data, projMap);
+      }, function(){ renderMonthRanking(data); });
+    } else {
+      renderMonthRanking(data);
+    }
   }
   function loadCurrentMonthRanking(){
-    api('getCurrentMonthRanking', {}, renderMonthRanking);
+    api('getCurrentMonthRanking', {}, function(data){
+      loadMonthRankingWithProj(data.month, data);
+    });
   }
   function loadMonthOptions(){
     api('getMonthsList', {}, function(months){
@@ -545,7 +572,11 @@
           sel.appendChild(o);
         });
       });
-      sm.onchange = function(){ api('getMonthlyRanking', {month: sm.value}, renderMonthRanking); };
+      sm.onchange = function(){
+        api('getMonthlyRanking', {month: sm.value}, function(data){
+          loadMonthRankingWithProj(sm.value, data);
+        });
+      };
       sd.onchange = fetchPlayerDailySales;
       fetchPlayerDailySales();
     });
