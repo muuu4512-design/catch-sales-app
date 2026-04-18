@@ -745,6 +745,7 @@
   function initCalendar(){ var n = new Date(); _calY = n.getFullYear(); _calM = n.getMonth(); }
   function changeCalMonth(d){ _calM += d; if(_calM < 0){ _calM = 11; _calY--; } if(_calM > 11){ _calM = 0; _calY++; } loadCalendar(); }
   document.getElementById("calendarPlayerSelect").addEventListener("change", loadCalendar);
+  document.getElementById("dailyPlayerSelect").addEventListener("change", fetchPlayerDailySales);
   function loadCalendar(){
     var mk = _calY + "-" + pad2(_calM + 1);
     var pl = document.getElementById("calendarPlayerSelect").value || "全員";
