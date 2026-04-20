@@ -1050,6 +1050,125 @@
     }
   }
 
+  /* ===== LocalStorage キャッシュ ===== */
+  var CACHE_KEY = 'catch-sales-init-v1';
+  function loadCached() {
+    try { var r = localStorage.getItem(CACHE_KEY); return r ? JSON.parse(r).data : null; } catch(e) { return null; }
+  }
+  function saveCache(data) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ts: Date.now(), data: data})); } catch(e) {}
+  }
+
+  /* ===== 週・月オプション適用（onchange含む） ===== */
+  function applyWeekOptions(weeks) {
+    var sw = document.getElementById("weekSelect");
+    var sc = document.getElementById("chartPeriodSelect");
+    sw.innerHTML = ""; sc.innerHTML = "";
+    if (!weeks || !weeks.length) {
+      var o = document.createElement("option"); o.textContent = "まだデータがない．";
+      sw.appendChild(o); sw.disabled = true;
+      sc.appendChild(o.cloneNode(true)); sc.disabled = true; return;
+    }
+    sw.disabled = false; sc.disabled = false;
+    weeks.forEach(function(w, i) {
+      [sw, sc].forEach(function(sel) {
+        var o = document.createElement("option");
+        o.value = w.week_start; o.textContent = w.label; if (i === 0) o.selected = true;
+        sel.appendChild(o);
+      });
+    });
+    sw.onchange = function() { api('getRankingByWeek', {week_start: sw.value}, renderRanking); };
+    sc.onchange = function() { loadCharts(sc.value); };
+  }
+  function applyMonthOptions(months) {
+    var sm = document.getElementById("monthSelect");
+    var sd = document.getElementById("dailyMonthSelect");
+    sm.innerHTML = ""; sd.innerHTML = "";
+    if (!months || !months.length) {
+      var o = document.createElement("option"); o.textContent = "まだデータがない．";
+      sm.appendChild(o); sm.disabled = true;
+      sd.appendChild(o.cloneNode(true)); sd.disabled = true; return;
+    }
+    sm.disabled = false; sd.disabled = false;
+    months.forEach(function(m, i) {
+      [sm, sd].forEach(function(sel) {
+        var o = document.createElement("option");
+        o.value = m.month; o.textContent = m.label; if (i === 0) o.selected = true;
+        sel.appendChild(o);
+      });
+    });
+    sm.onchange = function() {
+      api('getMonthlyRanking', {month: sm.value}, function(data) { loadMonthRankingWithProj(sm.value, data); });
+    };
+    sd.onchange = fetchPlayerDailySales;
+  }
+
+  /* ===== 一括データ適用 ===== */
+  function applyInitialData(d) {
+    // プレイヤーセレクト
+    var s1 = document.getElementById("playerSelect");
+    var s2 = document.getElementById("dailyPlayerSelect");
+    var sc = document.getElementById("calendarPlayerSelect");
+    s1.innerHTML = ""; s2.innerHTML = "";
+    while (sc.options.length > 1) sc.remove(1);
+    if (d.players && d.players.length) {
+      s1.disabled = false; s2.disabled = false;
+      d.players.forEach(function(p, i) {
+        [s1, s2, sc].forEach(function(sel) {
+          var o = document.createElement("option");
+          o.value = p.name; o.textContent = p.name;
+          if (sel !== sc && i === 0) o.selected = true;
+          sel.appendChild(o);
+        });
+      });
+    }
+    // 半月ランキング
+    if (d.weekRanking) renderRanking(d.weekRanking);
+    // 月間ランキング（月末予測込み）
+    if (d.monthRanking) {
+      var projMap = {};
+      if (d.monthProjection && d.monthProjection.projections) {
+        d.monthProjection.projections.forEach(function(p) { projMap[p.name] = p; });
+      }
+      renderMonthRanking(d.monthRanking, projMap);
+    }
+    // ドロップダウン群
+    if (d.weeks)  applyWeekOptions(d.weeks);
+    if (d.months) applyMonthOptions(d.months);
+    // 24時間未入力
+    if (d.inactive) renderInactive(d.inactive);
+    // カレンダー
+    if (d.calendar) {
+      var cp = d.calendar.month.split("-");
+      _calY = parseInt(cp[0]); _calM = parseInt(cp[1]) - 1;
+      renderCalendar(d.calendar);
+    }
+    // グラフ（折りたたみ内なので非同期で問題なし）
+    if (d.weekRanking) loadCharts(d.weekRanking.week_start);
+    // 日別売上
+    fetchPlayerDailySales();
+  }
+
+  /* ===== 初期一括ロード（API 1回 + キャッシュ即時表示） ===== */
+  function loadInitialData() {
+    var cached = loadCached();
+    if (cached) applyInitialData(cached);   // キャッシュを即時描画
+    api('getInitialData', {}, function(d) {
+      applyInitialData(d);
+      saveCache(d);
+    }, function(err) {
+      // GAS v24未デプロイ時のフォールバック
+      if (!cached) {
+        loadPlayers();
+        loadCurrentWeekRanking();
+        loadWeekOptions();
+        loadCurrentMonthRanking();
+        loadInactivePlayers();
+        loadCalendar();
+      }
+    });
+  }
+
   /* 初期ロード */
   buildStoreRows();
   setToday();
@@ -1057,12 +1176,7 @@
   showSkeleton("rankingList", 4);
   showSkeleton("monthRankingList", 4);
   showSkeleton("inactiveList", 3);
-  loadPlayers();
-  loadCurrentWeekRanking();
-  loadWeekOptions();
-  loadCurrentMonthRanking();
-  loadInactivePlayers();
-  loadCalendar();
+  loadInitialData();
 </script>
 </body>
 </html>
