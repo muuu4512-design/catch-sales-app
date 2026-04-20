@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <!-- baseline -->
+  <rect x="51" y="420" width="410" height="4" rx="2" fill="#3b4a63"/>
+  <!-- bar 1: short -->
+  <rect x="77" y="236" width="97" height="184" rx="10" fill="#3b82f6" opacity="0.75"/>
+  <!-- bar 2: medium -->
+  <rect x="207" y="142" width="97" height="278" rx="10" fill="#3b82f6"/>
+  <!-- bar 3: tall -->
+  <rect x="338" y="55" width="97" height="365" rx="10" fill="#22c55e"/>
+</svg>

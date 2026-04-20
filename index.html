@@ -3,8 +3,16 @@
 <head>
   <meta charset="utf-8">
   <title>キャッチ売上ランキング</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="売上">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://script.google.com">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
 
   <style>
     :root {
@@ -222,9 +230,78 @@
     }
     #cleanupResult.ok { color: #4ade80; }
     #cleanupResult.ng { color: #fca5a5; }
+
+    /* ===== PWA: iOS standalone 上部パディング ===== */
+    @media (display-mode: standalone) {
+      body { padding-top: calc(14px + env(safe-area-inset-top)); }
+    }
+
+    /* ===== スケルトンローディング ===== */
+    @keyframes shimmer {
+      0%   { background-position: 200% center; }
+      100% { background-position: -200% center; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #1e293b 25%, #2d3f55 50%, #1e293b 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite linear;
+      border-radius: 10px;
+    }
+    .skeleton-item { height: 52px; margin-bottom: 6px; }
+    .skeleton-line { height: 13px; margin-bottom: 7px; border-radius: 6px; }
+    .skeleton-line.short { width: 55%; }
+
+    /* ===== トースト通知 ===== */
+    .toast {
+      position: fixed;
+      bottom: calc(68px + env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: #1e293b;
+      color: #f9fafb;
+      padding: 11px 22px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+      opacity: 0;
+      transition: opacity 0.22s, transform 0.22s;
+      white-space: nowrap;
+      z-index: 999;
+      border: 1px solid rgba(255,255,255,0.1);
+      pointer-events: none;
+      max-width: calc(100vw - 32px);
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.ok  { border-color: #22c55e44; color: #4ade80; }
+    .toast.ng  { border-color: #f9737344; color: #fca5a5; }
+
+    /* ===== ランキングアイテム アニメ ===== */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .ranking-item { animation: fadeInUp 0.22s ease both; }
+    @media (prefers-reduced-motion: reduce) {
+      .ranking-item { animation: none; }
+      .skeleton { animation: none; }
+    }
+
+    /* ランク1〜3 左アクセントライン */
+    .rank-1 { border-left: 3px solid #facc15; }
+    .rank-2 { border-left: 3px solid #94a3b8; }
+    .rank-3 { border-left: 3px solid #fb923c; }
+
+    /* 保存ボタン loading 状態 */
+    button.loading {
+      background: #1e293b !important;
+      color: var(--sub) !important;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
+<div id="toastEl" class="toast" aria-live="polite"></div>
 <div class="wrapper">
 
   <!-- 入力 -->
@@ -725,12 +802,12 @@
     api('deleteSaleEntry', {date: date, player: player},
       function(res){
         var n = (res && typeof res.deleted === 'number') ? res.deleted : 0;
-        alert(n + " 行削除した．");
+        showToast(n + " 行削除した", "ok");
         fetchPlayerDailySales();
         loadCurrentWeekRanking(); loadCurrentMonthRanking();
         loadCalendar(); loadInactivePlayers();
       },
-      function(err){ alert("エラー：" + err.message); }
+      function(err){ showToast("エラー：" + err.message, "ng"); }
     );
   }
 
@@ -795,20 +872,26 @@
     var amounts = getStoreAmounts();
     var total = STORES.reduce(function(s, k){ return s + (amounts[k] || 0); }, 0);
     if(total <= 0){ msg.textContent = "少なくとも1店舗の金額を入力して．"; msg.className = "ng"; return; }
-    document.getElementById("submitBtn").disabled = true;
+    var btn2 = document.getElementById("submitBtn");
+    btn2.disabled = true; btn2.classList.add("loading");
     msg.textContent = "保存中…"; msg.className = "";
     api('submitDailySales', {date: date, player: player, amounts: JSON.stringify(amounts)},
       function(res){
         msg.textContent = (typeof res === 'string') ? res : '保存しました'; msg.className = "ok";
+        showToast("✓ 保存しました", "ok");
+        if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
         resetStoreInputs();
-        document.getElementById("submitBtn").disabled = false;
+        var btn = document.getElementById("submitBtn");
+        btn.disabled = false; btn.classList.remove("loading");
         loadCurrentWeekRanking(); loadWeekOptions();
         loadCurrentMonthRanking(); loadMonthOptions();
         loadInactivePlayers(); loadCalendar();
       },
       function(err){
         msg.textContent = "エラー：" + err.message; msg.className = "ng";
-        document.getElementById("submitBtn").disabled = false;
+        showToast("エラー：" + err.message, "ng");
+        var btn = document.getElementById("submitBtn");
+        btn.disabled = false; btn.classList.remove("loading");
       }
     );
   }
@@ -935,10 +1018,45 @@
 
   document.getElementById("dailyPlayerSelect").addEventListener("change", fetchPlayerDailySales);
 
+  /* ===== Service Worker 登録 ===== */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/catch-sales-app/sw.js', {scope: '/catch-sales-app/'})
+      .catch(function(){});
+  }
+
+  /* ===== トースト ===== */
+  var _toastTimer = null;
+  function showToast(msg, type) {
+    var el = document.getElementById("toastEl");
+    if (!el) return;
+    if (_toastTimer) clearTimeout(_toastTimer);
+    el.textContent = msg;
+    el.className = "toast" + (type ? " " + type : "");
+    requestAnimationFrame(function(){ el.classList.add("show"); });
+    _toastTimer = setTimeout(function(){
+      el.classList.remove("show");
+    }, 2600);
+  }
+
+  /* ===== スケルトン表示 ===== */
+  function showSkeleton(listId, count) {
+    var list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = "";
+    for (var i = 0; i < (count || 4); i++) {
+      var li = document.createElement("li");
+      li.className = "skeleton skeleton-item";
+      list.appendChild(li);
+    }
+  }
+
   /* 初期ロード */
   buildStoreRows();
   setToday();
   initCalendar();
+  showSkeleton("rankingList", 4);
+  showSkeleton("monthRankingList", 4);
+  showSkeleton("inactiveList", 3);
   loadPlayers();
   loadCurrentWeekRanking();
   loadWeekOptions();
