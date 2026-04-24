@@ -351,7 +351,7 @@
   </div>
 
   <!-- グラフ（折りたたみ） -->
-  <details class="card">
+  <details class="card" id="chartDetails">
     <summary>
       <span><span class="summary-title">グラフ</span> <span class="summary-caption" id="chartPeriodCaption"></span></span>
     </summary>
@@ -1052,8 +1052,14 @@
 
   /* ===== LocalStorage キャッシュ ===== */
   var CACHE_KEY = 'catch-sales-init-v1';
+  var CACHE_TTL = 5 * 60 * 1000; // 5分以内は再フェッチ不要
   function loadCached() {
-    try { var r = localStorage.getItem(CACHE_KEY); return r ? JSON.parse(r).data : null; } catch(e) { return null; }
+    try {
+      var r = localStorage.getItem(CACHE_KEY);
+      if (!r) return null;
+      var obj = JSON.parse(r);
+      return { data: obj.data, fresh: (Date.now() - (obj.ts || 0)) < CACHE_TTL };
+    } catch(e) { return null; }
   }
   function saveCache(data) {
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ts: Date.now(), data: data})); } catch(e) {}
@@ -1143,16 +1149,40 @@
       _calY = parseInt(cp[0]); _calM = parseInt(cp[1]) - 1;
       renderCalendar(d.calendar);
     }
-    // グラフ（折りたたみ内なので非同期で問題なし）
-    if (d.weekRanking) loadCharts(d.weekRanking.week_start);
-    // 日別売上
+    // グラフ（折りたたみが開いている時のみ描画、閉じていれば開いた時に遅延実行）
+    if (d.weekRanking) {
+      var chartDets = document.getElementById('chartDetails');
+      if (chartDets && chartDets.open) { loadCharts(d.weekRanking.week_start); }
+      else { _pendingChartKey = d.weekRanking.week_start; }
+    }
+    // 日別売上（デバウンスで重複呼び出しを排除）
     fetchPlayerDailySales();
   }
+
+  /* ===== 遅延グラフ：折りたたみを開いた時にロード ===== */
+  var _pendingChartKey = null;
+  document.getElementById('chartDetails').addEventListener('toggle', function() {
+    if (this.open && _pendingChartKey) {
+      loadCharts(_pendingChartKey);
+      _pendingChartKey = null;
+    }
+  });
+
+  /* ===== fetchPlayerDailySales デバウンス（重複呼び出し防止） ===== */
+  var _dailyFetchTimer = null;
+  var _origFetchPlayerDailySales = fetchPlayerDailySales;
+  fetchPlayerDailySales = function() {
+    clearTimeout(_dailyFetchTimer);
+    _dailyFetchTimer = setTimeout(_origFetchPlayerDailySales, 80);
+  };
 
   /* ===== 初期一括ロード（API 1回 + キャッシュ即時表示） ===== */
   function loadInitialData() {
     var cached = loadCached();
-    if (cached) applyInitialData(cached);   // キャッシュを即時描画
+    if (cached) {
+      applyInitialData(cached.data);   // キャッシュを即時描画
+      if (cached.fresh) return;        // 5分以内なら API 不要
+    }
     api('getInitialData', {}, function(d) {
       applyInitialData(d);
       saveCache(d);
