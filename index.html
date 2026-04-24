@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="preconnect" href="https://script.google.com">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+  <!-- Chart.js は グラフを開いた時だけ動的にロード -->
 
   <style>
     :root {
@@ -298,9 +298,37 @@
       color: var(--sub) !important;
       cursor: not-allowed;
     }
+
+    /* ===== オフラインバナー ===== */
+    .offline-banner {
+      position: fixed; top: 0; left: 0; right: 0;
+      padding: calc(env(safe-area-inset-top) + 8px) 16px 8px;
+      background: #7f1d1d; color: #fca5a5;
+      text-align: center; font-size: 13px; font-weight: 600;
+      z-index: 200; display: none;
+    }
+
+    /* ===== 最終更新時刻 ===== */
+    .last-updated {
+      font-size: 11px; color: var(--sub);
+      text-align: right; margin: -6px 0 8px;
+    }
+
+    /* ===== プルリフレッシュ インジケーター ===== */
+    .pull-indicator {
+      position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+      background: #1e293b; color: var(--sub);
+      padding: 8px 20px; border-radius: 0 0 20px 20px;
+      font-size: 12px; z-index: 150;
+      transition: opacity 0.2s;
+      opacity: 0; pointer-events: none;
+    }
+    .pull-indicator.visible { opacity: 1; }
   </style>
 </head>
 <body>
+<div id="offlineBanner" class="offline-banner">📴 オフライン — キャッシュを表示中</div>
+<div id="pullIndicator" class="pull-indicator">↓ 離して更新</div>
 <div id="toastEl" class="toast" aria-live="polite"></div>
 <div class="wrapper">
 
@@ -349,6 +377,8 @@
     <div id="monthLabel" class="month-label"></div>
     <ul id="monthRankingList" class="ranking-list"></ul>
   </div>
+
+  <div id="lastUpdated" class="last-updated"></div>
 
   <!-- グラフ（折りたたみ） -->
   <details class="card" id="chartDetails">
@@ -555,18 +585,24 @@
     document.getElementById("dateInput").value = s;
   }
 
-  /* ===== GAS REST API ===== */
+  /* ===== GAS REST API（10秒タイムアウト付き） ===== */
   var API_BASE = 'https://script.google.com/macros/s/AKfycbz6NovgFy26QEZ5_GI3ci0nu97sP-O0MdjK8GMIUezy3GgCRbPEwqVYka4RLuvjO_RIwQ/exec';
   function api(action, params, onSuccess, onError){
     var url = API_BASE + '?action=' + encodeURIComponent(action);
     if(params){ Object.keys(params).forEach(function(k){ url += '&' + k + '=' + encodeURIComponent(params[k]); }); }
-    fetch(url)
-      .then(function(r){ return r.json(); })
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function(){ ctrl.abort(); }, 10000) : null;
+    fetch(url, ctrl ? {signal: ctrl.signal} : {})
+      .then(function(r){ clearTimeout(timer); return r.json(); })
       .then(function(data){
         if(data && data.error){ if(onError) onError({message: data.error}); else console.error(data.error); }
         else { onSuccess(data); }
       })
-      .catch(function(e){ if(onError) onError({message: String(e)}); else console.error(e); });
+      .catch(function(e){
+        clearTimeout(timer);
+        var msg = (e && e.name === 'AbortError') ? 'タイムアウト（10秒）' : String(e);
+        if(onError) onError({message: msg}); else console.error(msg);
+      });
   }
 
   /* プレイヤー */
@@ -629,7 +665,10 @@
   function loadCurrentWeekRanking(){
     api('getCurrentWeekRanking', {}, function(data){
       renderRanking(data);
-      loadCharts(data.week_start);
+      // Chart.js lazy対応：開いていれば即描画、閉じていればキー保持
+      var chartDets = document.getElementById('chartDetails');
+      if (chartDets && chartDets.open && _chartJsLoaded) { loadCharts(data.week_start); }
+      else { _pendingChartKey = data.week_start; }
     });
   }
   function loadWeekOptions(){
@@ -784,11 +823,20 @@
       list.appendChild(li);
     });
   }
+  /* ===== 日別売上メモリキャッシュ ===== */
+  var _dailySalesCache = {};
+  var DAILY_CACHE_TTL = 5 * 60 * 1000;
   function fetchPlayerDailySales(){
     var p = document.getElementById("dailyPlayerSelect").value;
     var m = document.getElementById("dailyMonthSelect").value;
     if(!p || !m) return;
-    api('getPlayerDailySales', {player: p, month: m}, renderPlayerDailySales);
+    var ck = p + '|' + m;
+    var hit = _dailySalesCache[ck];
+    if(hit && (Date.now() - hit.ts) < DAILY_CACHE_TTL){ renderPlayerDailySales(hit.data); return; }
+    api('getPlayerDailySales', {player: p, month: m}, function(data){
+      _dailySalesCache[ck] = {data: data, ts: Date.now()};
+      renderPlayerDailySales(data);
+    });
   }
 
   /* 行削除（その日まるごと） */
@@ -803,6 +851,8 @@
       function(res){
         var n = (res && typeof res.deleted === 'number') ? res.deleted : 0;
         showToast(n + " 行削除した", "ok");
+        // キャッシュ無効化
+        delete _dailySalesCache[player + '|' + document.getElementById("dailyMonthSelect").value];
         fetchPlayerDailySales();
         loadCurrentWeekRanking(); loadCurrentMonthRanking();
         loadCalendar(); loadInactivePlayers();
@@ -1104,7 +1154,13 @@
       });
     });
     sm.onchange = function() {
-      api('getMonthlyRanking', {month: sm.value}, function(data) { loadMonthRankingWithProj(sm.value, data); });
+      var m = sm.value;
+      var hit = _monthRankingCache[m];
+      if(hit && (Date.now() - hit.ts) < MONTH_CACHE_TTL){ loadMonthRankingWithProj(m, hit.data); return; }
+      api('getMonthlyRanking', {month: m}, function(data){
+        _monthRankingCache[m] = {data: data, ts: Date.now()};
+        loadMonthRankingWithProj(m, data);
+      });
     };
     sd.onchange = fetchPlayerDailySales;
   }
@@ -1155,18 +1211,93 @@
       if (chartDets && chartDets.open) { loadCharts(d.weekRanking.week_start); }
       else { _pendingChartKey = d.weekRanking.week_start; }
     }
+    // 最終更新時刻
+    updateLastUpdated();
     // 日別売上（デバウンスで重複呼び出しを排除）
     fetchPlayerDailySales();
   }
 
-  /* ===== 遅延グラフ：折りたたみを開いた時にロード ===== */
+  /* ===== 月間ランキング メモリキャッシュ ===== */
+  var _monthRankingCache = {};
+  var MONTH_CACHE_TTL = 10 * 60 * 1000; // 10分
+
+  /* ===== 遅延グラフ：折りたたみを開いた時に Chart.js を動的ロード ===== */
   var _pendingChartKey = null;
+  var _chartJsLoaded = false;
+  var _chartJsLoading = false;
   document.getElementById('chartDetails').addEventListener('toggle', function() {
-    if (this.open && _pendingChartKey) {
-      loadCharts(_pendingChartKey);
-      _pendingChartKey = null;
+    if (!this.open || !_pendingChartKey) return;
+    var key = _pendingChartKey;
+    _pendingChartKey = null;
+    if (_chartJsLoaded) {
+      loadCharts(key);
+    } else if (!_chartJsLoading) {
+      _chartJsLoading = true;
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+      s.onload = function() { _chartJsLoaded = true; _chartJsLoading = false; loadCharts(key); };
+      document.head.appendChild(s);
     }
   });
+
+  /* ===== 最終更新時刻 ===== */
+  var _lastUpdatedTs = 0;
+  var _lastUpdatedInterval = null;
+  function updateLastUpdated() {
+    _lastUpdatedTs = Date.now();
+    var el = document.getElementById('lastUpdated');
+    if (!el) return;
+    clearInterval(_lastUpdatedInterval);
+    function tick() {
+      var diff = Math.floor((Date.now() - _lastUpdatedTs) / 1000);
+      if (diff < 10)       el.textContent = '今更新';
+      else if (diff < 60)  el.textContent = diff + '秒前に更新';
+      else if (diff < 3600) el.textContent = Math.floor(diff / 60) + '分前に更新';
+      else                  el.textContent = Math.floor(diff / 3600) + '時間前に更新';
+    }
+    tick();
+    _lastUpdatedInterval = setInterval(tick, 15000);
+  }
+
+  /* ===== オフライン検知 ===== */
+  function updateOnlineStatus() {
+    var b = document.getElementById('offlineBanner');
+    if (!b) return;
+    b.style.display = navigator.onLine ? 'none' : 'block';
+  }
+  window.addEventListener('online',  function() { updateOnlineStatus(); showToast('オンラインに復帰しました', 'ok'); });
+  window.addEventListener('offline', function() { updateOnlineStatus(); showToast('📴 オフライン — キャッシュを表示中', 'ng'); });
+  updateOnlineStatus();
+
+  /* ===== プルダウンリフレッシュ ===== */
+  var _pullStartY = 0, _pullActive = false, _pullRefreshing = false;
+  var _pullInd = document.getElementById('pullIndicator');
+  function forceFresh() {
+    if (_pullRefreshing) return;
+    _pullRefreshing = true;
+    showToast('🔄 更新中…', '');
+    api('getInitialData', {}, function(d) {
+      applyInitialData(d);
+      saveCache(d);
+      _pullRefreshing = false;
+      showToast('✓ 更新しました', 'ok');
+    }, function(err) {
+      _pullRefreshing = false;
+      showToast('更新失敗：' + err.message, 'ng');
+    });
+  }
+  document.addEventListener('touchstart', function(e) {
+    if (window.scrollY === 0 && !_pullRefreshing) { _pullStartY = e.touches[0].clientY; _pullActive = true; }
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (!_pullActive) return;
+    var dy = e.touches[0].clientY - _pullStartY;
+    if (dy > 30)  { _pullInd.classList.add('visible'); }
+    if (dy > 70)  { _pullActive = false; _pullInd.classList.remove('visible'); forceFresh(); }
+  }, {passive: true});
+  document.addEventListener('touchend', function() {
+    _pullActive = false; _pullInd.classList.remove('visible');
+  }, {passive: true});
 
   /* ===== fetchPlayerDailySales デバウンス（重複呼び出し防止） ===== */
   var _dailyFetchTimer = null;
