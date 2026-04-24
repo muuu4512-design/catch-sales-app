@@ -610,7 +610,7 @@
     right.appendChild(amt);
     if(projData && projData.projected_total > 0){
       var proj = document.createElement("div"); proj.className = "proj";
-      proj.innerHTML = "月末予測 <span>〜" + projData.projected_total.toLocaleString() + " 円</span>";
+      proj.innerHTML = "AI付き月売り予測 <span>〜" + projData.projected_total.toLocaleString() + " 円</span>";
       right.appendChild(proj);
     }
     li.appendChild(left); li.appendChild(right); list.appendChild(li);
