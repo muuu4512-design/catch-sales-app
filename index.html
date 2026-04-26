@@ -16,30 +16,165 @@
 
   <style>
     :root {
-      --bg: #0f172a; --card: #111827; --accent: #3b82f6;
-      --accent-soft: rgba(59,130,246,0.15); --text: #f9fafb;
-      --sub: #9ca3af; --danger: #f97373;
+      /* 背景レイヤー */
+      --bg: #0a0f1d;
+      --bg-soft: #0f172a;
+      --card: #131c30;
+      --card-2: #1a2540;
+      /* アクセント */
+      --accent: #3b82f6;
+      --accent-2: #6366f1;
+      --accent-soft: rgba(59,130,246,0.15);
+      --grad-blue: linear-gradient(135deg, #2563eb 0%, #6366f1 100%);
+      --grad-green: linear-gradient(135deg, #16a34a 0%, #22d3ee 100%);
+      --grad-warm: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      --grad-purple: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+      /* テキスト */
+      --text: #f9fafb;
+      --sub: #94a3b8;
+      --sub-strong: #cbd5e1;
+      /* 状態色 */
+      --good: #4ade80;
+      --warn: #fbbf24;
+      --danger: #f97373;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
-      padding: 10px 10px calc(20px + env(safe-area-inset-bottom));
-      background: var(--bg); color: var(--text);
+      padding: 0 10px calc(80px + env(safe-area-inset-bottom));
+      background:
+        radial-gradient(1200px 600px at -10% -10%, rgba(99,102,241,0.18), transparent 50%),
+        radial-gradient(900px 500px at 110% 0%, rgba(34,211,238,0.10), transparent 50%),
+        var(--bg);
+      color: var(--text);
       font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
       display: flex; justify-content: center;
       min-height: 100vh;
     }
-    .wrapper { width: 100%; max-width: 480px; }
+    .wrapper { width: 100%; max-width: 480px; padding-top: 10px; }
+
+    /* ====== ヒーロー ====== */
+    .hero {
+      margin: 4px 2px 12px;
+      padding: 14px 4px 4px;
+    }
+    .hero-title {
+      display: flex; align-items: baseline; gap: 8px;
+      margin-bottom: 12px;
+    }
+    .hero-title h1 {
+      margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.02em;
+      background: linear-gradient(90deg, #fff, #94a3b8);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .hero-title small { font-size: 11px; color: var(--sub); }
+    .hero-stats {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .hero-stat {
+      position: relative; overflow: hidden;
+      padding: 14px 14px 12px; border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+      min-height: 96px;
+    }
+    .hero-stat.s-blue   { background: var(--grad-blue); }
+    .hero-stat.s-green  { background: var(--grad-green); }
+    .hero-stat::after {
+      content: ""; position: absolute; right: -30px; top: -30px;
+      width: 120px; height: 120px;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 60%);
+      pointer-events: none;
+    }
+    .hero-stat .hero-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.85); text-transform: uppercase;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .hero-stat .hero-name {
+      font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.95);
+      margin-top: 6px; min-height: 18px;
+    }
+    .hero-stat .hero-value {
+      font-size: 22px; font-weight: 800; color: #fff;
+      margin-top: 4px; line-height: 1.05;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-stat .hero-sub {
+      font-size: 10.5px; color: rgba(255,255,255,0.85);
+      margin-top: 6px;
+    }
+
+    /* ====== タブバー（下部固定） ====== */
+    .tabbar {
+      position: fixed; left: 0; right: 0;
+      bottom: 0; padding-bottom: env(safe-area-inset-bottom);
+      background: rgba(10,15,29,0.92);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-top: 1px solid rgba(148,163,184,0.18);
+      z-index: 50;
+      display: flex; justify-content: center;
+    }
+    .tabbar-inner {
+      width: 100%; max-width: 480px;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+    }
+    .tab-btn {
+      background: transparent; border: none; color: var(--sub);
+      padding: 10px 4px 8px; margin: 0; min-height: 60px;
+      font-size: 11px; font-weight: 600;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      border-radius: 0; cursor: pointer; touch-action: manipulation;
+      transition: color 0.15s;
+    }
+    .tab-btn .tab-ic {
+      font-size: 20px; line-height: 1;
+      filter: grayscale(0.4) opacity(0.8);
+      transition: filter 0.15s, transform 0.15s;
+    }
+    .tab-btn.active { color: var(--accent); }
+    .tab-btn.active .tab-ic { filter: none; transform: translateY(-1px); }
+    .tab-btn:active .tab-ic { transform: scale(0.92); }
+
+    /* ====== タブパネル切替 ====== */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: tabFade 0.2s ease-out; }
+    @keyframes tabFade {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ====== クイック金額チップ ====== */
+    .quick-chips {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      padding: 4px 0 2px;
+    }
+    .quick-chip {
+      flex: 1 0 auto; min-width: 56px;
+      background: rgba(59,130,246,0.10);
+      border: 1px solid rgba(59,130,246,0.35);
+      color: #93c5fd; font-weight: 700; font-size: 12px;
+      padding: 6px 10px; border-radius: 999px;
+      width: auto; min-height: 32px; margin: 0;
+    }
+    .quick-chip:active { background: rgba(59,130,246,0.25); }
+    .quick-chip.minus {
+      background: rgba(127,29,29,0.18);
+      border-color: rgba(248,113,113,0.4);
+      color: #fca5a5;
+    }
     .title { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
     .subtitle { font-size: 13px; color: var(--sub); margin-bottom: 10px; }
     .card {
-      background: var(--card); border-radius: 14px; padding: 14px 14px 12px;
-      margin-bottom: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.35);
-      border: 1px solid rgba(148,163,184,0.25);
+      background: linear-gradient(180deg, var(--card-2) 0%, var(--card) 100%);
+      border-radius: 16px; padding: 14px 14px 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 14px 30px rgba(0,0,0,0.38);
+      border: 1px solid rgba(148,163,184,0.18);
     }
-    .card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
-    .card-title { font-size: 16px; font-weight: 600; }
+    .card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; gap: 8px; }
+    .card-title { font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
     .card-caption { font-size: 11px; color: var(--sub); }
     label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--sub); }
     .field { margin-bottom: 12px; }
@@ -68,10 +203,12 @@
     }
     button:active { transform: scale(0.98); opacity: 0.9; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    /* 保存ボタンをカード下部でスティッキーに */
+    /* 保存ボタンをカード下部でスティッキーに（タブバーの上） */
     .sticky-save {
-      position: sticky; bottom: 6px; z-index: 5; margin-top: 12px;
-      box-shadow: 0 8px 24px rgba(37,99,235,0.45);
+      position: sticky;
+      bottom: calc(74px + env(safe-area-inset-bottom));
+      z-index: 5; margin-top: 12px;
+      box-shadow: 0 10px 28px rgba(37,99,235,0.55);
     }
     /* 折りたたみカード */
     details.card { padding: 0; overflow: hidden; }
@@ -101,6 +238,62 @@
       background: rgba(15,23,42,0.7);
       min-height: 48px;
     }
+    /* ===== 新ランキングカード ===== */
+    .rank-row {
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; margin-bottom: 8px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(26,37,64,0.85), rgba(15,23,42,0.7));
+      border: 1px solid rgba(148,163,184,0.18);
+    }
+    .rank-row::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: var(--accent); opacity: 0.5;
+    }
+    .rank-row.r1::before { background: linear-gradient(180deg, #facc15, #f59e0b); opacity: 1; }
+    .rank-row.r2::before { background: linear-gradient(180deg, #e5e7eb, #94a3b8); opacity: 1; }
+    .rank-row.r3::before { background: linear-gradient(180deg, #fb923c, #c2410c); opacity: 1; }
+    .rank-medal {
+      flex-shrink: 0; width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 12px; font-size: 16px; font-weight: 800;
+      background: rgba(148,163,184,0.15); color: var(--sub-strong);
+    }
+    .rank-row.r1 .rank-medal { background: linear-gradient(135deg, rgba(250,204,21,0.35), rgba(245,158,11,0.25)); color: #fde68a; font-size: 20px; }
+    .rank-row.r2 .rank-medal { background: linear-gradient(135deg, rgba(229,231,235,0.30), rgba(148,163,184,0.20)); color: #f3f4f6; font-size: 20px; }
+    .rank-row.r3 .rank-medal { background: linear-gradient(135deg, rgba(251,146,60,0.35), rgba(194,65,12,0.25)); color: #fed7aa; font-size: 20px; }
+    .rank-main { flex: 1; min-width: 0; }
+    .rank-line1 {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px;
+    }
+    .rank-name {
+      font-size: 15px; font-weight: 700; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .rank-amt {
+      font-size: 15px; font-weight: 800; color: var(--good);
+      font-variant-numeric: tabular-nums; flex-shrink: 0;
+    }
+    .rank-bar {
+      margin-top: 6px; height: 5px; border-radius: 999px;
+      background: rgba(148,163,184,0.12); overflow: hidden;
+    }
+    .rank-bar-fill {
+      height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), #22d3ee);
+      transition: width 0.4s ease-out;
+    }
+    .rank-row.r1 .rank-bar-fill { background: linear-gradient(90deg, #facc15, #f59e0b); }
+    .rank-row.r2 .rank-bar-fill { background: linear-gradient(90deg, #e5e7eb, #94a3b8); }
+    .rank-row.r3 .rank-bar-fill { background: linear-gradient(90deg, #fb923c, #c2410c); }
+    .rank-proj {
+      font-size: 11px; color: #93c5fd; margin-top: 4px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .rank-proj b { color: #bfdbfe; font-weight: 700; }
+    /* 旧ランキング互換（残ってる箇所用） */
     .rank-badge {
       min-width: 28px; height: 28px; text-align: center;
       font-size: 14px; font-weight: 700; margin-right: 8px;
@@ -344,78 +537,102 @@
 <div id="toastEl" class="toast" aria-live="polite"></div>
 <div class="wrapper">
 
-  <!-- 入力 -->
-  <div class="card">
-    <div class="title">キャッチ売上入力</div>
-    <div id="today" class="subtitle"></div>
-    <div class="meta-row">
-      <div id="todayDow"></div>
-      <div>対象：日曜〜木曜の合計売上</div>
+  <!-- ヒーロー -->
+  <header class="hero">
+    <div class="hero-title">
+      <h1>キャッチ売上</h1>
+      <small id="heroDate"></small>
     </div>
-    <div class="field">
-      <label for="playerSelect">プレイヤー</label>
-      <select id="playerSelect"></select>
-    </div>
-    <div class="field">
-      <label for="dateInput">日付（全曜日入力OK）</label>
-      <input id="dateInput" type="date">
-    </div>
-    <label style="margin-bottom:6px;">店舗別売上</label>
-    <div class="store-rows" id="storeRows"></div>
-    <div class="store-total-row">
-      <span>合計</span>
-      <span class="store-total-amt" id="storeTotalAmt">0 円</span>
-    </div>
-    <button id="submitBtn" class="sticky-save">この内容で保存</button>
-    <div id="message"></div>
-  </div>
-
-  <!-- 半月ランキング -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">今の期間のランキング（半月）</div>
-      <div class="card-caption">日〜木の合計</div>
-    </div>
-    <div id="weekLabel" class="week-label"></div>
-    <ul id="rankingList" class="ranking-list"></ul>
-  </div>
-
-  <!-- 月間ランキング -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">今月の売上</div>
-      <div class="card-caption">日〜土すべて</div>
-    </div>
-    <div id="monthLabel" class="month-label"></div>
-    <ul id="monthRankingList" class="ranking-list"></ul>
-  </div>
-
-  <div id="lastUpdated" class="last-updated"></div>
-
-  <!-- グラフ（折りたたみ） -->
-  <details class="card" id="chartDetails">
-    <summary>
-      <span><span class="summary-title">グラフ</span> <span class="summary-caption" id="chartPeriodCaption"></span></span>
-    </summary>
-    <div class="card-body">
-      <div class="chart-tabs">
-        <button class="chart-tab active" onclick="switchChart('pie',this)">円グラフ</button>
-        <button class="chart-tab" onclick="switchChart('bar',this)">棒グラフ</button>
+    <div class="hero-stats">
+      <div class="hero-stat s-blue">
+        <div class="hero-label">🏆 半月リーダー</div>
+        <div class="hero-name" id="heroWeekName">—</div>
+        <div class="hero-value" id="heroWeekAmt">¥0</div>
+        <div class="hero-sub" id="heroWeekSub">—</div>
       </div>
-      <div id="pieChartWrap" class="chart-wrap"><canvas id="pieChart"></canvas></div>
-      <div id="barChartWrap" class="chart-wrap"><canvas id="barChart"></canvas></div>
-      <div class="field" style="margin-top:10px;">
-        <select id="chartPeriodSelect" style="width:100%;"></select>
+      <div class="hero-stat s-green">
+        <div class="hero-label">📅 月間リーダー</div>
+        <div class="hero-name" id="heroMonthName">—</div>
+        <div class="hero-value" id="heroMonthAmt">¥0</div>
+        <div class="hero-sub" id="heroMonthSub">—</div>
       </div>
     </div>
-  </details>
+  </header>
 
-  <!-- カレンダー（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">カレンダー</span> <span class="summary-caption">日別売上</span></span>
-    </summary>
-    <div class="card-body">
+  <!-- ============== タブ：入力 ============== -->
+  <section class="tab-panel active" data-tab="input">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📝 売上を入力</div>
+        <div class="card-caption" id="todayDow"></div>
+      </div>
+      <div id="today" class="subtitle"></div>
+      <div class="field">
+        <label for="playerSelect">プレイヤー</label>
+        <select id="playerSelect"></select>
+      </div>
+      <div class="field">
+        <label for="dateInput">日付（全曜日入力OK）</label>
+        <input id="dateInput" type="date">
+      </div>
+      <label style="margin-bottom:6px;">店舗別売上</label>
+      <div class="store-rows" id="storeRows"></div>
+      <div class="quick-chips" id="quickChips" aria-label="クイック金額">
+        <button class="quick-chip" type="button" data-amt="5000">+5K</button>
+        <button class="quick-chip" type="button" data-amt="10000">+10K</button>
+        <button class="quick-chip" type="button" data-amt="20000">+20K</button>
+        <button class="quick-chip" type="button" data-amt="50000">+50K</button>
+        <button class="quick-chip minus" type="button" data-action="clear">クリア</button>
+      </div>
+      <div class="store-total-row">
+        <span>合計</span>
+        <span class="store-total-amt" id="storeTotalAmt">0 円</span>
+      </div>
+      <button id="submitBtn" class="sticky-save">この内容で保存</button>
+      <div id="message"></div>
+    </div>
+
+    <!-- 24時間未入力 -->
+    <details class="card">
+      <summary>
+        <span><span class="summary-title">⏰ 24時間入力なし</span> <span class="summary-caption">全員分</span></span>
+      </summary>
+      <div class="card-body">
+        <ul id="inactiveList" class="ranking-list"></ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== タブ：ランキング ============== -->
+  <section class="tab-panel" data-tab="rank">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🥇 半月ランキング</div>
+        <div class="card-caption">日〜木の合計</div>
+      </div>
+      <div id="weekLabel" class="week-label"></div>
+      <ul id="rankingList" class="ranking-list"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📈 今月の売上</div>
+        <div class="card-caption">日〜土すべて</div>
+      </div>
+      <div id="monthLabel" class="month-label"></div>
+      <ul id="monthRankingList" class="ranking-list"></ul>
+    </div>
+
+    <div id="lastUpdated" class="last-updated"></div>
+  </section>
+
+  <!-- ============== タブ：カレンダー ============== -->
+  <section class="tab-panel" data-tab="cal">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🗓️ カレンダー</div>
+        <div class="card-caption">日別売上</div>
+      </div>
       <div class="field">
         <select id="calendarPlayerSelect">
           <option value="全員">全員合計</option>
@@ -429,85 +646,115 @@
       <div id="calGrid" class="cal-grid"></div>
       <div id="calTotal" class="cal-total"></div>
     </div>
-  </details>
+  </section>
 
-  <!-- 過去の期間（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">過去の半月</span> <span class="summary-caption">選択して表示</span></span>
-    </summary>
-    <div class="card-body">
-      <select id="weekSelect" style="width:100%;"></select>
-      <div class="helper">売上が登録された期間だけ表示される．</div>
-    </div>
-  </details>
+  <!-- ============== タブ：詳細 ============== -->
+  <section class="tab-panel" data-tab="more">
+    <!-- グラフ -->
+    <details class="card" id="chartDetails">
+      <summary>
+        <span><span class="summary-title">📊 グラフ</span> <span class="summary-caption" id="chartPeriodCaption"></span></span>
+      </summary>
+      <div class="card-body">
+        <div class="chart-tabs">
+          <button class="chart-tab active" onclick="switchChart('pie',this)">円グラフ</button>
+          <button class="chart-tab" onclick="switchChart('bar',this)">棒グラフ</button>
+        </div>
+        <div id="pieChartWrap" class="chart-wrap"><canvas id="pieChart"></canvas></div>
+        <div id="barChartWrap" class="chart-wrap"><canvas id="barChart"></canvas></div>
+        <div class="field" style="margin-top:10px;">
+          <select id="chartPeriodSelect" style="width:100%;"></select>
+        </div>
+      </div>
+    </details>
 
-  <!-- 月セレクト（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">過去の月</span> <span class="summary-caption">選択して表示</span></span>
-    </summary>
-    <div class="card-body">
-      <select id="monthSelect" style="width:100%;"></select>
-      <div class="helper">売上が登録された月だけ表示される．</div>
-    </div>
-  </details>
+    <!-- 過去の半月 -->
+    <details class="card">
+      <summary>
+        <span><span class="summary-title">⏪ 過去の半月</span> <span class="summary-caption">選択して表示</span></span>
+      </summary>
+      <div class="card-body">
+        <select id="weekSelect" style="width:100%;"></select>
+        <div class="helper">売上が登録された期間だけ表示される．</div>
+      </div>
+    </details>
 
-  <!-- プレイヤー別日別売上（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">プレイヤー別 日別売上</span></span>
-    </summary>
-    <div class="card-body">
-      <div class="field">
-        <label for="dailyPlayerSelect">プレイヤー</label>
-        <select id="dailyPlayerSelect"></select>
+    <!-- 過去の月 -->
+    <details class="card">
+      <summary>
+        <span><span class="summary-title">📆 過去の月</span> <span class="summary-caption">選択して表示</span></span>
+      </summary>
+      <div class="card-body">
+        <select id="monthSelect" style="width:100%;"></select>
+        <div class="helper">売上が登録された月だけ表示される．</div>
       </div>
-      <div class="field">
-        <label for="dailyMonthSelect">月</label>
-        <select id="dailyMonthSelect"></select>
-      </div>
-      <div id="dailySummary" class="daily-label"></div>
-      <ul id="dailySalesList" class="ranking-list"></ul>
-      <div class="helper" style="margin-top:6px;">各行の <span style="color:#fca5a5;">削除</span> ボタンで、その日の入力をまとめて消せる．</div>
-    </div>
-  </details>
+    </details>
 
-  <!-- データ整理（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">データ整理</span> <span class="summary-caption">重複・誤入力の削除</span></span>
-    </summary>
-    <div class="card-body">
-      <div class="cleanup-note">
-        店舗別入力に切り替える前の「古い形式の入力」が残っていると、合計が二重計上されることがある．<br>
-        プレイヤーと月を選び、まず「重複確認（ドライラン）」で件数を確認してから削除して．
+    <!-- プレイヤー別 日別 -->
+    <details class="card">
+      <summary>
+        <span><span class="summary-title">👤 プレイヤー別 日別売上</span></span>
+      </summary>
+      <div class="card-body">
+        <div class="field">
+          <label for="dailyPlayerSelect">プレイヤー</label>
+          <select id="dailyPlayerSelect"></select>
+        </div>
+        <div class="field">
+          <label for="dailyMonthSelect">月</label>
+          <select id="dailyMonthSelect"></select>
+        </div>
+        <div id="dailySummary" class="daily-label"></div>
+        <ul id="dailySalesList" class="ranking-list"></ul>
+        <div class="helper" style="margin-top:6px;">各行の <span style="color:#fca5a5;">削除</span> ボタンで、その日の入力をまとめて消せる．</div>
       </div>
-      <div class="field">
-        <label for="cleanupPlayerSelect">プレイヤー</label>
-        <select id="cleanupPlayerSelect"></select>
-      </div>
-      <div class="field">
-        <label for="cleanupMonthSelect">月</label>
-        <select id="cleanupMonthSelect"></select>
-      </div>
-      <button id="cleanupDryBtn" type="button">重複確認（ドライラン）</button>
-      <button id="cleanupRunBtn" type="button" class="cleanup-danger">重複を削除する</button>
-      <div id="cleanupResult"></div>
-    </div>
-  </details>
+    </details>
 
-  <!-- 24時間未入力（折りたたみ） -->
-  <details class="card">
-    <summary>
-      <span><span class="summary-title">24時間入力なし</span> <span class="summary-caption">全員分</span></span>
-    </summary>
-    <div class="card-body">
-      <ul id="inactiveList" class="ranking-list"></ul>
-    </div>
-  </details>
+    <!-- データ整理 -->
+    <details class="card">
+      <summary>
+        <span><span class="summary-title">🧹 データ整理</span> <span class="summary-caption">重複・誤入力の削除</span></span>
+      </summary>
+      <div class="card-body">
+        <div class="cleanup-note">
+          店舗別入力に切り替える前の「古い形式の入力」が残っていると、合計が二重計上されることがある．<br>
+          プレイヤーと月を選び、まず「重複確認（ドライラン）」で件数を確認してから削除して．
+        </div>
+        <div class="field">
+          <label for="cleanupPlayerSelect">プレイヤー</label>
+          <select id="cleanupPlayerSelect"></select>
+        </div>
+        <div class="field">
+          <label for="cleanupMonthSelect">月</label>
+          <select id="cleanupMonthSelect"></select>
+        </div>
+        <button id="cleanupDryBtn" type="button">重複確認（ドライラン）</button>
+        <button id="cleanupRunBtn" type="button" class="cleanup-danger">重複を削除する</button>
+        <div id="cleanupResult"></div>
+      </div>
+    </details>
+  </section>
 
 </div>
+
+<!-- 下部タブバー -->
+<nav class="tabbar" role="tablist">
+  <div class="tabbar-inner">
+    <button class="tab-btn active" type="button" data-target="input" role="tab">
+      <span class="tab-ic">📝</span><span>入力</span>
+    </button>
+    <button class="tab-btn" type="button" data-target="rank" role="tab">
+      <span class="tab-ic">🏆</span><span>ランキング</span>
+    </button>
+    <button class="tab-btn" type="button" data-target="cal" role="tab">
+      <span class="tab-ic">🗓️</span><span>カレンダー</span>
+    </button>
+    <button class="tab-btn" type="button" data-target="more" role="tab">
+      <span class="tab-ic">⋯</span><span>詳細</span>
+    </button>
+  </div>
+</nav>
+
 <script>
   var STORES = ["ごち", "どす", "ごろ", "うお"];
 
@@ -646,22 +893,42 @@
   }
 
   /* ランキング共通 */
-  function appendRankItem(list, row, i, projData){
-    var li = document.createElement("li"); li.className = "ranking-item rank-" + (i+1);
-    var left = document.createElement("div"); left.style.cssText = "display:flex;align-items:center";
-    var badge = document.createElement("div"); badge.className = "rank-badge"; badge.textContent = i+1;
-    var name = document.createElement("div"); name.className = "player-name"; name.textContent = row.name;
-    left.appendChild(badge); left.appendChild(name);
-    var right = document.createElement("div"); right.className = "rank-right";
-    var amt = document.createElement("div"); amt.className = "amount";
-    amt.textContent = row.total_amount.toLocaleString() + " 円";
-    right.appendChild(amt);
+  var MEDALS = ["🥇","🥈","🥉"];
+  function appendRankItem(list, row, i, projData, leaderTotal){
+    var li = document.createElement("li");
+    var rk = (i + 1);
+    li.className = "rank-row r" + rk;
+
+    // メダル/順位
+    var medal = document.createElement("div"); medal.className = "rank-medal";
+    medal.textContent = (rk <= 3) ? MEDALS[rk - 1] : rk;
+    li.appendChild(medal);
+
+    // メイン
+    var main = document.createElement("div"); main.className = "rank-main";
+    var line1 = document.createElement("div"); line1.className = "rank-line1";
+    var name = document.createElement("div"); name.className = "rank-name"; name.textContent = row.name;
+    var amt  = document.createElement("div"); amt.className  = "rank-amt";
+    amt.textContent = "¥" + (row.total_amount || 0).toLocaleString();
+    line1.appendChild(name); line1.appendChild(amt);
+    main.appendChild(line1);
+
+    // 進捗バー（リーダー比率）
+    var bar = document.createElement("div"); bar.className = "rank-bar";
+    var fill = document.createElement("div"); fill.className = "rank-bar-fill";
+    var ratio = leaderTotal > 0 ? Math.min(100, Math.round(row.total_amount / leaderTotal * 100)) : 0;
+    fill.style.width = ratio + "%";
+    bar.appendChild(fill);
+    main.appendChild(bar);
+
     if(projData && projData.projected_total > 0){
-      var proj = document.createElement("div"); proj.className = "proj";
-      proj.innerHTML = "AI月売り予測 <span>〜" + projData.projected_total.toLocaleString() + " 円</span>";
-      right.appendChild(proj);
+      var proj = document.createElement("div"); proj.className = "rank-proj";
+      proj.innerHTML = "🤖 AI月売り予測 <b>〜¥" + projData.projected_total.toLocaleString() + "</b>";
+      main.appendChild(proj);
     }
-    li.appendChild(left); li.appendChild(right); list.appendChild(li);
+
+    li.appendChild(main);
+    list.appendChild(li);
   }
 
   /* 半月ランキング */
@@ -672,7 +939,18 @@
     var sd = new Date(data.week_start + "T00:00:00");
     var ed = halfMonthEnd(sd);
     lbl.textContent = "対象期間：" + data.week_start + " ～ " + fmtDate(ed);
-    data.ranking.forEach(function(r, i){ appendRankItem(list, r, i); });
+    var leader = (data.ranking && data.ranking[0]) ? (data.ranking[0].total_amount || 0) : 0;
+    data.ranking.forEach(function(r, i){ appendRankItem(list, r, i, null, leader); });
+    // ヒーロー：半月リーダー
+    if (data.ranking && data.ranking.length) {
+      var top = data.ranking[0];
+      var nm = document.getElementById("heroWeekName");
+      var av = document.getElementById("heroWeekAmt");
+      var sb = document.getElementById("heroWeekSub");
+      if (nm) nm.textContent = top.name;
+      if (av) av.textContent = "¥" + (top.total_amount || 0).toLocaleString();
+      if (sb) sb.textContent = data.week_start.slice(5).replace("-","/") + " 〜 " + fmtDate(ed).slice(5).replace("-","/");
+    }
   }
   function loadCurrentWeekRanking(){
     api('getCurrentWeekRanking', {}, function(data){
@@ -712,9 +990,25 @@
     var lbl = document.getElementById("monthLabel");
     list.innerHTML = "";
     var p = data.month.split("-"); lbl.textContent = p[0] + "年" + p[1] + "月";
+    var leader = (data.ranking && data.ranking[0]) ? (data.ranking[0].total_amount || 0) : 0;
     data.ranking.forEach(function(r, i){
-      appendRankItem(list, r, i, projMap ? projMap[r.name] : null);
+      appendRankItem(list, r, i, projMap ? projMap[r.name] : null, leader);
     });
+    // ヒーロー：月間リーダー
+    if (data.ranking && data.ranking.length) {
+      var top = data.ranking[0];
+      var nm = document.getElementById("heroMonthName");
+      var av = document.getElementById("heroMonthAmt");
+      var sb = document.getElementById("heroMonthSub");
+      if (nm) nm.textContent = top.name;
+      if (av) av.textContent = "¥" + (top.total_amount || 0).toLocaleString();
+      var proj = projMap && projMap[top.name];
+      if (sb) {
+        sb.textContent = (proj && proj.projected_total > 0)
+          ? ("予測 〜¥" + proj.projected_total.toLocaleString())
+          : (p[0] + "/" + p[1]);
+      }
+    }
   }
   function loadMonthRankingWithProj(month, data){
     var today = new Date();
@@ -1354,6 +1648,63 @@
       }
     });
   }
+
+  /* ===== タブ切替 ===== */
+  (function initTabs(){
+    var btns = document.querySelectorAll('.tab-btn');
+    var panels = document.querySelectorAll('.tab-panel');
+    btns.forEach(function(b){
+      b.addEventListener('click', function(){
+        var t = b.getAttribute('data-target');
+        btns.forEach(function(x){ x.classList.toggle('active', x === b); });
+        panels.forEach(function(p){
+          p.classList.toggle('active', p.getAttribute('data-tab') === t);
+        });
+        // タブ切替時に上にスクロール（操作ストレス軽減）
+        try { window.scrollTo({top: 0, behavior: 'smooth'}); } catch(e) { window.scrollTo(0,0); }
+        if (navigator.vibrate) navigator.vibrate(8);
+      });
+    });
+  })();
+
+  /* ===== ヒーロー：日付ラベル ===== */
+  (function setHeroDate(){
+    var el = document.getElementById('heroDate');
+    if (!el) return;
+    var d = new Date();
+    var wd = ["日","月","火","水","木","金","土"][d.getDay()];
+    el.textContent = (d.getMonth()+1) + "/" + d.getDate() + "（" + wd + "）";
+  })();
+
+  /* ===== クイック金額チップ：選択中の店舗入力に加算 / 全クリア ===== */
+  (function initQuickChips(){
+    var chips = document.getElementById('quickChips');
+    if (!chips) return;
+    function focusedStoreInput(){
+      var ae = document.activeElement;
+      if (ae && ae.classList && ae.classList.contains('store-input')) return ae;
+      // フォーカスが無ければ先頭の店舗入力
+      return document.getElementById('storeInput-' + STORES[0]);
+    }
+    chips.addEventListener('click', function(e){
+      var t = e.target.closest('.quick-chip');
+      if (!t) return;
+      if (t.dataset.action === 'clear') {
+        resetStoreInputs();
+        showToast('入力をクリアしました', '');
+        return;
+      }
+      var inc = parseInt(t.dataset.amt, 10) || 0;
+      if (!inc) return;
+      var input = focusedStoreInput();
+      if (!input) return;
+      var cur = parseInt(input.value || '0', 10) || 0;
+      input.value = String(cur + inc);
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      input.focus();
+      if (navigator.vibrate) navigator.vibrate(10);
+    });
+  })();
 
   /* 初期ロード */
   buildStoreRows();
