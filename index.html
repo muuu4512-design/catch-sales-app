@@ -1129,19 +1129,57 @@
       list.appendChild(li);
     });
   }
-  /* ===== 日別売上メモリキャッシュ ===== */
-  var _dailySalesCache = {};
-  var DAILY_CACHE_TTL = 5 * 60 * 1000;
+  /* ===== 日別売上 二段キャッシュ（メモリ + localStorage） ===== */
+  var DAILY_CACHE_LS_KEY = 'catch-sales-daily-v1';
+  var DAILY_CACHE_TTL = 30 * 60 * 1000;       // 30分以内は完全新鮮（API飛ばさない）
+  var DAILY_CACHE_STALE_TTL = 60 * 1000;      // 60秒超えたら裏で再取得（stale-while-revalidate）
+  var _dailySalesCache = (function(){
+    try { return JSON.parse(localStorage.getItem(DAILY_CACHE_LS_KEY) || '{}'); } catch(e){ return {}; }
+  })();
+  function _saveDailyCacheLS(){
+    try { localStorage.setItem(DAILY_CACHE_LS_KEY, JSON.stringify(_dailySalesCache)); } catch(e){}
+  }
+  function _showDailySkeleton(){
+    var list = document.getElementById("dailySalesList");
+    if (!list) return;
+    list.innerHTML = "";
+    for (var i = 0; i < 5; i++) {
+      var li = document.createElement("li");
+      li.className = "skeleton skeleton-item";
+      list.appendChild(li);
+    }
+  }
   function fetchPlayerDailySales(){
     var p = document.getElementById("dailyPlayerSelect").value;
     var m = document.getElementById("dailyMonthSelect").value;
     if(!p || !m) return;
     var ck = p + '|' + m;
     var hit = _dailySalesCache[ck];
-    if(hit && (Date.now() - hit.ts) < DAILY_CACHE_TTL){ renderPlayerDailySales(hit.data); return; }
+    var age = hit ? (Date.now() - hit.ts) : Infinity;
+    /* 30分以内：キャッシュ即返し、APIは叩かない */
+    if (hit && age < DAILY_CACHE_TTL) {
+      renderPlayerDailySales(hit.data);
+      /* 60秒超えたら裏で更新（stale-while-revalidate） */
+      if (age > DAILY_CACHE_STALE_TTL) {
+        api('getPlayerDailySales', {player: p, month: m}, function(data){
+          _dailySalesCache[ck] = {data: data, ts: Date.now()};
+          _saveDailyCacheLS();
+          /* 現在も同じプレイヤー/月を見ているなら更新 */
+          var curP = document.getElementById("dailyPlayerSelect").value;
+          var curM = document.getElementById("dailyMonthSelect").value;
+          if (curP === p && curM === m) renderPlayerDailySales(data);
+        });
+      }
+      return;
+    }
+    /* キャッシュ無 → スケルトン即表示 + API */
+    _showDailySkeleton();
     api('getPlayerDailySales', {player: p, month: m}, function(data){
       _dailySalesCache[ck] = {data: data, ts: Date.now()};
-      renderPlayerDailySales(data);
+      _saveDailyCacheLS();
+      var curP = document.getElementById("dailyPlayerSelect").value;
+      var curM = document.getElementById("dailyMonthSelect").value;
+      if (curP === p && curM === m) renderPlayerDailySales(data);
     });
   }
 
@@ -1425,6 +1463,7 @@
   }
   function invalidateAllCaches() {
     try { localStorage.removeItem(CACHE_KEY); } catch(e) {}
+    try { localStorage.removeItem(DAILY_CACHE_LS_KEY); } catch(e) {}
     _monthRankingCache = {};
     _dailySalesCache = {};
   }
