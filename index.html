@@ -1371,10 +1371,16 @@
 
   document.getElementById("dailyPlayerSelect").addEventListener("change", fetchPlayerDailySales);
 
-  /* ===== Service Worker 登録 ===== */
+  /* ===== Service Worker 登録 + 更新通知受信 ===== */
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/catch-sales-app/sw.js', {scope: '/catch-sales-app/'})
       .catch(function(){});
+    /* SWからのキャッシュ更新通知を受けたら、最新データを再取得して画面を更新 */
+    navigator.serviceWorker.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'data-updated' && /getInitialData/.test(e.data.url)) {
+        api('getInitialData', {}, function(d) { applyInitialData(d); saveCache(d); });
+      }
+    });
   }
 
   /* ===== トースト ===== */
@@ -1405,7 +1411,7 @@
 
   /* ===== LocalStorage キャッシュ ===== */
   var CACHE_KEY = 'catch-sales-init-v1';
-  var CACHE_TTL = 5 * 60 * 1000; // 5分以内は再フェッチ不要
+  var CACHE_TTL = 60 * 1000; // 1分以内は再フェッチ不要（SWのstale-while-revalidateと併用）
   function loadCached() {
     try {
       var r = localStorage.getItem(CACHE_KEY);
@@ -1706,13 +1712,25 @@
     });
   })();
 
-  /* 初期ロード */
+  /* 初期ロード（起動時間計測付き） */
+  var _bootStart = (window.performance && performance.now) ? performance.now() : Date.now();
   buildStoreRows();
   setToday();
   initCalendar();
   showSkeleton("rankingList", 4);
   showSkeleton("monthRankingList", 4);
   showSkeleton("inactiveList", 3);
+  /* applyInitialData の最初の呼び出しで「初回描画」の時間を出す */
+  var _firstRenderLogged = false;
+  var _origApply = applyInitialData;
+  applyInitialData = function(d) {
+    _origApply(d);
+    if (!_firstRenderLogged) {
+      _firstRenderLogged = true;
+      var ms = ((window.performance && performance.now) ? performance.now() : Date.now()) - _bootStart;
+      console.log('[perf] 初回描画まで ' + Math.round(ms) + 'ms');
+    }
+  };
   loadInitialData();
 </script>
 </body>
