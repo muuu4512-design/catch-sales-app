@@ -864,10 +864,22 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
   const [mePlayer, setMePlayer] = useState(null);
   useEffect(() => { if (currentPlayer && !mePlayer) setMePlayer(currentPlayer); }, [currentPlayer]);
 
+  // Determine which month to display: current month if it has data for this player, otherwise most recent
   const now = new Date();
-  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const dayOfMonth  = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const curMonthPrefix = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthPrefix = useMemo(() => {
+    if (!mePlayer) return curMonthPrefix;
+    const has = sales.some(s => s.player === mePlayer.name && s.date.startsWith(curMonthPrefix));
+    if (has) return curMonthPrefix;
+    // Fall back to most recent month with data
+    const months = [...new Set(sales.filter(s => s.player === mePlayer.name).map(s => s.date.slice(0,7)))].sort().reverse();
+    return months[0] || curMonthPrefix;
+  }, [sales, mePlayer, curMonthPrefix]);
+
+  const isCurMonth = monthPrefix === curMonthPrefix;
+  const periodDate = new Date(monthPrefix + '-01');
+  const dayOfMonth  = isCurMonth ? now.getDate() : new Date(periodDate.getFullYear(), periodDate.getMonth()+1, 0).getDate();
+  const daysInMonth = new Date(periodDate.getFullYear(), periodDate.getMonth()+1, 0).getDate();
 
   const mySales = useMemo(() => {
     if (!mePlayer) return [];
@@ -903,18 +915,19 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
 
   const days = useMemo(() => {
     const arr = [];
+    const [py, pm] = monthPrefix.split('-').map(Number);
     for (let d = dayOfMonth; d >= Math.max(1, dayOfMonth-13); d--) {
       const dStr = `${monthPrefix}-${String(d).padStart(2,'0')}`;
       const data = dailyMap[dStr];
-      const dow  = new Date(now.getFullYear(), now.getMonth(), d).getDay();
-      arr.push({ d, w:weekdays[dow], data, today: d===dayOfMonth, dateStr:dStr });
+      const dow  = new Date(py, pm-1, d).getDay();
+      arr.push({ d, w:weekdays[dow], data, today: isCurMonth && d===now.getDate(), dateStr:dStr });
     }
     return arr;
-  }, [dailyMap, dayOfMonth, monthPrefix, now]);
+  }, [dailyMap, dayOfMonth, monthPrefix, isCurMonth, now]);
 
   return (
     <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
-      <PageHeader dark={dark} title="個人別売上" sub="PERSONAL"/>
+      <PageHeader dark={dark} title="個人別売上" sub={`PERSONAL · ${monthPrefix.replace('-','.')}${isCurMonth?'':' (最新)'}`}/>
 
       {/* Staff horizontal scroll */}
       <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
@@ -1218,7 +1231,7 @@ function SettingRow({ dark, icon, label, sub, right, accent, onPress }) {
 
 // ── App Root ───────────────────────────────────────────────────────────────
 function App() {
-  const [tab, setTab]                   = useState('rec');
+  const [tab, setTab]                   = useState(() => localStorage.getItem('lastTab') || 'rank');
   const [dark, setDark]                 = useState(() => {
     const stored = localStorage.getItem('dark');
     if (stored !== null) return stored === '1';
@@ -1233,17 +1246,10 @@ function App() {
   });
 
   const loadData = useCallback(async () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth()+1).padStart(2,'0');
-    const monthStart = `${y}-${m}-01`;
-    // Load 3 months back for rankings / historical calendar
-    const threeMonthsAgo = new Date(now); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
-    const fromDate = toYMD(threeMonthsAgo);
-
+    // Load all sales data (we only have ~500 rows total, no date filter needed)
     const [{ data:pl }, { data:sl }] = await Promise.all([
       db.from('players').select('*').eq('active', true).order('name'),
-      db.from('sales').select('*').gte('date', fromDate).order('date', { ascending: false }),
+      db.from('sales').select('*').order('date', { ascending: false }).limit(5000),
     ]);
     if (pl) setPlayers(pl);
     if (sl) setSales(sl);
@@ -1253,15 +1259,27 @@ function App() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // Keep currentPlayer synced with players list (in case goal changed)
+  // Auto-select first player if none selected
   useEffect(() => {
-    if (currentPlayer && players.length > 0) {
+    if (players.length === 0) return;
+    if (currentPlayer) {
       const fresh = players.find(p => p.id === currentPlayer.id);
       if (fresh) {
         setCurrentPlayer(fresh);
         localStorage.setItem('currentPlayer', JSON.stringify(fresh));
       }
+    } else {
+      // Default to first player
+      setCurrentPlayer(players[0]);
+      localStorage.setItem('currentPlayer', JSON.stringify(players[0]));
     }
   }, [players]);
+
+  // Persist last tab
+  const handleSetTab = (t) => {
+    setTab(t);
+    localStorage.setItem('lastTab', t);
+  };
 
   const handleSelectPlayer = (p) => {
     setCurrentPlayer(p);
@@ -1283,7 +1301,7 @@ function App() {
         {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} loading={loading}/>}
         {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
         {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} onRefresh={loadData}/>}
-        <BottomNav active={tab} dark={dark} onNav={setTab}/>
+        <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
       </div>
 
       <style>{`
