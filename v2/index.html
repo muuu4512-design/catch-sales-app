@@ -684,11 +684,12 @@ function ScreenRanking({ dark, sales, players, loading }) {
 }
 
 // ── Screen: カレンダー ────────────────────────────────────────────────────
-function ScreenCalendar({ dark, sales, loading }) {
+function ScreenCalendar({ dark, sales, players, loading }) {
   const now = new Date();
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth()+1);
   const [selectedDay, setSelectedDay] = useState(now.getDate());
+  const [filterPlayer, setFilterPlayer] = useState(null); // null = チーム全体
 
   const changeMonth = (delta) => {
     let y = viewYear, m = viewMonth + delta;
@@ -701,17 +702,23 @@ function ScreenCalendar({ dark, sales, loading }) {
   const monthPrefix = `${viewYear}-${String(viewMonth).padStart(2,'0')}`;
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth()+1;
 
+  // Filter sales by player if selected
+  const filteredSales = useMemo(() => {
+    if (!filterPlayer) return sales;
+    return sales.filter(s => s.player === filterPlayer.name);
+  }, [sales, filterPlayer]);
+
   // Group sales by date for this month
   const byDate = useMemo(() => {
     const m = {};
-    for (const s of sales) {
+    for (const s of filteredSales) {
       if (!s.date.startsWith(monthPrefix)) continue;
       if (!m[s.date]) m[s.date] = { total:0, stores:new Set() };
       m[s.date].total += s.amount;
       if (s.store) m[s.date].stores.add(s.store);
     }
     return m;
-  }, [sales, monthPrefix]);
+  }, [filteredSales, monthPrefix]);
 
   const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
   const firstDow    = new Date(viewYear, viewMonth-1, 1).getDay();
@@ -724,11 +731,20 @@ function ScreenCalendar({ dark, sales, loading }) {
   const selDateStr = `${monthPrefix}-${String(selectedDay).padStart(2,'0')}`;
   const selData = byDate[selDateStr];
   const selStoreSales = useMemo(() => {
-    const rows = sales.filter(s => s.date === selDateStr);
+    const rows = filteredSales.filter(s => s.date === selDateStr);
     const m = {};
     for (const s of rows) { if (s.store) m[s.store] = (m[s.store]||0) + s.amount; }
     return m;
-  }, [sales, selDateStr]);
+  }, [filteredSales, selDateStr]);
+
+  // For team view: show per-player breakdown on selected day
+  const selPlayerSales = useMemo(() => {
+    if (filterPlayer) return null;
+    const rows = sales.filter(s => s.date === selDateStr);
+    const m = {};
+    for (const s of rows) m[s.player] = (m[s.player]||0) + s.amount;
+    return Object.entries(m).map(([p,t]) => ({ player:p, total:t })).sort((a,b)=>b.total-a.total);
+  }, [sales, selDateStr, filterPlayer]);
 
   const monthTotal = Object.values(byDate).reduce((a,v) => a+v.total, 0);
   const workedDays = Object.keys(byDate).length;
@@ -756,10 +772,47 @@ function ScreenCalendar({ dark, sales, loading }) {
         }
       />
 
+      {/* Player picker chips */}
+      <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
+        <div style={{ display:'flex', gap:6, padding:'0 16px', minWidth:'max-content' }}>
+          <div onClick={() => setFilterPlayer(null)} style={{
+            flexShrink:0, display:'flex', alignItems:'center', gap:6,
+            padding:!filterPlayer?'4px 12px 4px 4px':'4px 12px',
+            borderRadius:999, cursor:'pointer',
+            background:!filterPlayer?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:(dark?W.sumi2:'#FFFCF5'),
+            border:!filterPlayer?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+            color:!filterPlayer?W.goldL:(dark?W.bone:W.ink),
+            boxShadow:!filterPlayer?`0 4px 12px ${W.crimson}40`:'none',
+          }}>
+            {!filterPlayer && <div style={{ width:28, height:28, borderRadius:'50%', background:W.crimsonD, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:13, fontWeight:600, color:W.goldL, border:`1px solid ${W.gold}` }}>全</div>}
+            <div style={{ fontSize:11, fontWeight:600 }}>全体</div>
+          </div>
+          {players.map(p => {
+            const on = filterPlayer?.id === p.id;
+            return (
+              <div key={p.id} onClick={() => setFilterPlayer(p)} style={{
+                flexShrink:0, display:'flex', alignItems:'center', gap:6,
+                padding:on?'4px 12px 4px 4px':'4px',
+                borderRadius:999, cursor:'pointer',
+                background:on?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:(dark?W.sumi2:'#FFFCF5'),
+                border:on?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                color:on?W.goldL:(dark?W.bone:W.ink),
+                boxShadow:on?`0 4px 12px ${W.crimson}40`:'none',
+              }}>
+                <div style={{ width:28, height:28, borderRadius:'50%', background:on?W.crimsonD:(dark?W.sumi3:W.paper2), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:13, fontWeight:600, color:on?W.goldL:(dark?W.bone:W.ink), border:on?`1px solid ${W.gold}`:'none' }}>
+                  {p.name[0]}
+                </div>
+                {on && <div style={{ fontSize:11, fontWeight:600 }}>{p.name}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Summary KPIs */}
       <div style={{ padding:'0 16px 10px', display:'flex', gap:6 }}>
         {[
-          { l:'累計', v:loading?'…':yen(monthTotal) },
+          { l:filterPlayer?`${filterPlayer.name}計`:'累計', v:loading?'…':yen(monthTotal) },
           { l:'日平均', v:loading?'…':yen(dayAvg) },
           { l:'稼働', v:loading?'…':`${workedDays}日` },
         ].map(kpi => (
@@ -833,7 +886,27 @@ function ScreenCalendar({ dark, sales, loading }) {
               <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>データなし</div>
             )}
           </div>
-          {selData && Object.keys(selStoreSales).length > 0 ? (
+          {/* Team view: show per-player breakdown when no filter */}
+          {!filterPlayer && selData && selPlayerSales && selPlayerSales.length > 0 && (
+            <>
+              <div style={{ fontSize:9, letterSpacing:2, color:dark?W.boneMute:W.inkMute, marginTop:2, marginBottom:6 }}>スタッフ別</div>
+              {selPlayerSales.map(({player,total}) => {
+                const pct = selData.total > 0 ? total/selData.total*100 : 0;
+                return (
+                  <div key={player} style={{ display:'flex', alignItems:'center', gap:8, padding:'3px 0' }}>
+                    <div style={{ width:22, height:22, borderRadius:'50%', background:dark?W.sumi3:W.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:11, fontWeight:600, color:dark?W.bone:W.ink, flexShrink:0 }}>{player[0]}</div>
+                    <div style={{ fontFamily:FSERIF, fontSize:12, fontWeight:500, width:60, color:dark?W.bone:W.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{player}</div>
+                    <div style={{ flex:1, height:5, borderRadius:3, background:dark?W.sumi3:W.paper2, overflow:'hidden' }}>
+                      <div style={{ width:`${pct}%`, height:'100%', background:`linear-gradient(90deg,${W.crimson},${W.gold})`, borderRadius:3 }}/>
+                    </div>
+                    <div style={{ fontFamily:FMONO, fontSize:11, fontWeight:600, width:60, textAlign:'right', color:dark?W.bone:W.ink }}>{yen(total)}</div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {/* Player-filtered view: show store breakdown */}
+          {filterPlayer && selData && Object.keys(selStoreSales).length > 0 && (
             STORES.map(s => {
               const v = selStoreSales[s.id] || 0;
               const pct = selData.total > 0 ? v/selData.total*100 : 0;
@@ -848,9 +921,11 @@ function ScreenCalendar({ dark, sales, loading }) {
                 </div>
               );
             })
-          ) : selData ? (
+          )}
+          {filterPlayer && selData && Object.keys(selStoreSales).length === 0 && (
             <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>店舗別データなし（合計のみ）</div>
-          ) : (
+          )}
+          {!selData && (
             <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>この日の売上記録はありません</div>
           )}
         </Card>
@@ -1298,7 +1373,7 @@ function App() {
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
         {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
         {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading}/>}
-        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} loading={loading}/>}
+        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
         {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
         {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} onRefresh={loadData}/>}
         <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
