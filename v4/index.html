@@ -125,26 +125,16 @@ const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
 const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
 const db = window.supabase.createClient(SB_URL, SB_KEY);
 
-// ── Local AI Predictor (DOW × 6ヶ月加重平均ベース) ────────────────────────
-// 各プレイヤーの曜日パターン + 直近月加重で月末着地を予測
-function predictMonthEnd(playerName, sales, refDate = new Date()) {
+// ── Local AI Predictor — per-player history + DOW pattern fallback ────────
+// 各プレイヤー自身の履歴で予測。データ不足の場合のみテンプレ(トッププレイヤー DOWパターン)で補完
+function computeDowAvg(playerName, sales, refDate) {
   const y  = refDate.getFullYear();
   const m  = refDate.getMonth();
   const ym = `${y}-${String(m+1).padStart(2,'0')}`;
-  const today = refDate.getDate();
-  const daysInMonth = new Date(y, m+1, 0).getDate();
 
-  // 当月実績
-  const recorded = sales
-    .filter(s => s.player === playerName && s.date.startsWith(ym))
-    .reduce((a,s) => a+s.amount, 0);
-
-  // 既に月末を過ぎている
-  if (today >= daysInMonth) return { projected_total: recorded, projected_add: 0, current: recorded, sample_days: 0 };
-
-  // 過去6ヶ月の日次データを集計
   const sixMoStart = new Date(y, m - 6, 1);
   const sixMoStartStr = `${sixMoStart.getFullYear()}-${String(sixMoStart.getMonth()+1).padStart(2,'0')}-01`;
+
   const dayAmounts = {};
   for (const s of sales) {
     if (s.player !== playerName) continue;
@@ -152,25 +142,68 @@ function predictMonthEnd(playerName, sales, refDate = new Date()) {
     dayAmounts[s.date] = (dayAmounts[s.date] || 0) + s.amount;
   }
 
-  // 曜日別: 日付ごとに重み (新しい月ほど高い) を付けて集計
-  const dowWeighted = [[],[],[],[],[],[],[]]; // 日〜土
+  const dowWeighted = [[],[],[],[],[],[],[]];
   for (const [date, amount] of Object.entries(dayAmounts)) {
     const dow = new Date(date + 'T00:00:00').getDay();
     const [dy,dm] = date.split('-').map(Number);
     const monthsAgo = (y - dy) * 12 + (m+1 - dm);
-    const weight = Math.max(1, 7 - monthsAgo); // 1ヶ月前=6, 2=5, ..., 6=1
+    const weight = Math.max(1, 7 - monthsAgo);
     dowWeighted[dow].push({ amount, weight });
   }
-
-  // 加重平均
   const dowAvg = dowWeighted.map(arr => {
     if (arr.length === 0) return 0;
-    const wsum = arr.reduce((a,b) => a + b.weight, 0);
+    const wsum  = arr.reduce((a,b) => a + b.weight, 0);
     const total = arr.reduce((a,b) => a + b.amount * b.weight, 0);
     return wsum > 0 ? total / wsum : 0;
   });
+  const dailyAvg = Object.values(dayAmounts).length > 0
+    ? Object.values(dayAmounts).reduce((a,b)=>a+b,0) / Object.values(dayAmounts).length
+    : 0;
+  return { dowAvg, dailyAvg, sample_days: Object.keys(dayAmounts).length };
+}
 
-  // 残り日 (今日除く翌日以降) を曜日別平均で積み上げ
+function predictMonthEnd(playerName, sales, refDate, templateDow) {
+  const y  = refDate.getFullYear();
+  const m  = refDate.getMonth();
+  const ym = `${y}-${String(m+1).padStart(2,'0')}`;
+  const today = refDate.getDate();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+
+  const recorded = sales
+    .filter(s => s.player === playerName && s.date.startsWith(ym))
+    .reduce((a,s) => a+s.amount, 0);
+
+  if (today >= daysInMonth) return { projected_total: recorded, projected_add: 0, current: recorded, sample_days: 0, confidence: 'done' };
+
+  const { dowAvg: ownDow, dailyAvg, sample_days } = computeDowAvg(playerName, sales, refDate);
+
+  // Decide which DOW pattern to use based on data sufficiency
+  let dowAvg;
+  let confidence;
+  if (sample_days >= 28) {
+    // 強: 自分のパターンのみ使用
+    dowAvg = ownDow;
+    confidence = 'high';
+  } else if (sample_days >= 7 && templateDow && dailyAvg > 0) {
+    // 中: 自分のパターン優先、欠損曜日のみテンプレで補完
+    const tmpAvg = templateDow.reduce((a,b)=>a+b,0) / 7;
+    const scale  = tmpAvg > 0 ? dailyAvg / tmpAvg : 1;
+    dowAvg = ownDow.map((p, i) => p > 0 ? p : templateDow[i] * scale);
+    confidence = 'medium';
+  } else if (templateDow && (dailyAvg > 0 || recorded > 0)) {
+    // 弱: テンプレを自分のレベルにスケーリング
+    // 自分のデイリー平均が無い場合は当月実績÷経過日でレートを推定
+    const ownRate = dailyAvg > 0 ? dailyAvg : (today > 0 ? recorded / today : 0);
+    const tmpAvg  = templateDow.reduce((a,b)=>a+b,0) / 7;
+    const scale   = tmpAvg > 0 ? ownRate / tmpAvg : 0;
+    dowAvg = templateDow.map(d => d * scale);
+    confidence = 'low';
+  } else {
+    // データ皆無
+    dowAvg = [0,0,0,0,0,0,0];
+    confidence = 'none';
+  }
+
   let projected_add = 0;
   for (let d = today + 1; d <= daysInMonth; d++) {
     const dow = new Date(y, m, d).getDay();
@@ -181,16 +214,21 @@ function predictMonthEnd(playerName, sales, refDate = new Date()) {
     projected_total: Math.round(recorded + projected_add),
     projected_add:   Math.round(projected_add),
     current:         recorded,
-    sample_days:     Object.keys(dayAmounts).length,
+    sample_days,
+    confidence,
   };
 }
 
 // 全プレイヤーの予測マップ生成
 function buildAllProjections(sales, players, refDate = new Date()) {
+  // しょうや(トッププレイヤー)の DOW パターンを DOW テンプレートとして抽出
+  // ※ しょうや 履歴を週次傾向リファレンスとして他プレイヤーの sparse データ補完に使う
+  //   各プレイヤーの予測絶対値は そのプレイヤー自身のデイリー平均 でスケーリングされる
+  const top = players.find(p => p.name === 'しょうや');
+  const templateDow = top ? computeDowAvg('しょうや', sales, refDate).dowAvg : null;
   const map = {};
   for (const p of players) {
-    const r = predictMonthEnd(p.name, sales, refDate);
-    map[p.name] = r;
+    map[p.name] = predictMonthEnd(p.name, sales, refDate, templateDow);
   }
   return map;
 }
