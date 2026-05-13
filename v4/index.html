@@ -508,7 +508,7 @@ function PlayerChip({ player, dark, players, onSelect }) {
 }
 
 // ── Screen: ランキング ────────────────────────────────────────────────────
-function ScreenRanking({ dark, sales, players, loading }) {
+function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
   const [mode, setMode] = useState('week'); // 'week' | 'month'
   const now = new Date();
 
@@ -640,43 +640,87 @@ function ScreenRanking({ dark, sales, players, loading }) {
         </div>
       ) : (
         <>
-          {/* AI / linear projection card */}
-          {projection && (
-            <div style={{
-              margin:'0 16px 12px',
-              background:dark?`linear-gradient(160deg,${W.sumi2},${W.sumi})`: `linear-gradient(160deg,#FFFCF5,#F8F2E2)`,
-              border:`0.5px solid ${W.gold}40`, borderRadius:16, padding:14,
-            }}>
-              <div style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:999, background:dark?W.crimsonD:'#FFF1D4', color:W.gold, fontSize:9, fontWeight:700, letterSpacing:2 }}>
-                <span style={{ display:'flex' }}>{I.sparkle}</span> 月末着地予測
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10 }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:9, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute }}>チーム合計予測</div>
-                  <div style={{ fontFamily:FSERIF, fontSize:24, fontWeight:600, color:dark?W.bone:W.ink, marginTop:2 }}>{yen(projection)}</div>
-                  <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, marginTop:2 }}>
-                    現在 <span style={{ fontFamily:FMONO, fontWeight:600, color:dark?W.bone:W.ink }}>{yen(totalSales)}</span>
-                    <span style={{ color:W.gold }}> → +{yen(projection-totalSales)}</span>
-                  </div>
-                </div>
-                <div style={{
-                  width:72, height:72, position:'relative',
-                }}>
-                  <svg width="72" height="72" viewBox="0 0 72 72">
-                    <circle cx="36" cy="36" r="30" fill="none" stroke={dark?W.sumi3:W.paper2} strokeWidth="5"/>
-                    <circle cx="36" cy="36" r="30" fill="none" stroke={W.gold} strokeWidth="5" strokeLinecap="round"
-                      strokeDasharray={`${188.5 * Math.min(totalSales/projection,1)} 188.5`}
-                      transform="rotate(-90 36 36)"
-                      style={{ filter:`drop-shadow(0 0 3px ${W.gold}80)` }}/>
-                  </svg>
-                  <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
-                    <div style={{ fontFamily:FSERIF, fontSize:16, fontWeight:600, color:dark?W.bone:W.ink, lineHeight:1 }}>
-                      {Math.round(totalSales/projection*100)}<span style={{ fontSize:10 }}>%</span>
+          {/* Monthly goal & projection card */}
+          {mode === 'month' && (
+            <div style={{ margin:'0 16px 12px', ...glassStyle(dark), borderRadius:20, padding:16 }}>
+              {teamGoal > 0 ? (
+                <>
+                  {/* Goal hero — biggest number */}
+                  <div style={{ textAlign:'center' }}>
+                    <div style={{ fontSize:10, letterSpacing:2, color:dark?W.boneMute:W.inkMute, textTransform:'uppercase' }}>月目標まで残り</div>
+                    <div style={{
+                      fontFamily:FSERIF, fontSize:40, fontWeight:400,
+                      color: totalSales >= teamGoal ? W.pine : (dark?W.bone:W.ink),
+                      letterSpacing:-1, lineHeight:1.1, marginTop:4,
+                    }}>
+                      {totalSales >= teamGoal ? '✓ 達成' : yen(teamGoal - totalSales)}
                     </div>
-                    <div style={{ fontSize:7, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute, marginTop:2 }}>進捗</div>
+                    <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute, marginTop:4 }}>
+                      <span style={{ fontFamily:FMONO, fontWeight:600, color:dark?W.bone:W.ink }}>{yen(totalSales)}</span>
+                      <span style={{ margin:'0 6px' }}>/</span>
+                      <span style={{ fontFamily:FMONO, fontWeight:600, color:W.crimson }}>{yen(teamGoal)}</span>
+                    </div>
                   </div>
-                </div>
-              </div>
+
+                  {/* Progress bar */}
+                  <div style={{ marginTop:14 }}>
+                    <div style={{
+                      height:10, borderRadius:5,
+                      background: dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)',
+                      position:'relative', overflow:'hidden',
+                      boxShadow:'inset 0 1px 2px rgba(0,0,0,0.10)',
+                    }}>
+                      <div style={{
+                        position:'absolute', left:0, top:0, bottom:0,
+                        width: `${Math.min(totalSales/teamGoal*100, 100)}%`,
+                        background: `linear-gradient(90deg, ${W.crimson}, ${W.crimsonL})`,
+                        borderRadius:5,
+                        boxShadow: `0 0 10px ${W.crimson}80`,
+                      }}/>
+                      {projection && projection > totalSales && (
+                        <div style={{
+                          position:'absolute',
+                          left: `${(totalSales/teamGoal*100)}%`, top:0, bottom:0,
+                          width: `${Math.min((projection-totalSales)/teamGoal*100, 100 - totalSales/teamGoal*100)}%`,
+                          background: `repeating-linear-gradient(45deg, ${W.gold}66, ${W.gold}66 4px, ${W.gold}22 4px, ${W.gold}22 8px)`,
+                        }}/>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginTop:6 }}>
+                      <div>
+                        <span style={{ fontFamily:FSERIF, fontSize:22, fontWeight:600, color:W.crimson, lineHeight:1 }}>
+                          {Math.round(totalSales/teamGoal*100)}
+                        </span>
+                        <span style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>% 達成</span>
+                      </div>
+                      {projection && (
+                        <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute }}>
+                          着地予測 <span style={{ fontFamily:FMONO, fontWeight:600, color:projection>=teamGoal?W.pine:W.gold }}>
+                            {yen(projection)} ({Math.round(projection/teamGoal*100)}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* No goal set — show projection only */
+                projection && (
+                  <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:10, letterSpacing:2, color:dark?W.boneMute:W.inkMute, textTransform:'uppercase' }}>月末着地予測</div>
+                      <div style={{ fontFamily:FSERIF, fontSize:30, fontWeight:400, color:dark?W.bone:W.ink, marginTop:4, letterSpacing:-0.5 }}>{yen(projection)}</div>
+                      <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, marginTop:4 }}>
+                        現在 <span style={{ fontFamily:FMONO, fontWeight:600, color:dark?W.bone:W.ink }}>{yen(totalSales)}</span>
+                        <span style={{ color:W.crimson }}> → +{yen(projection-totalSales)}</span>
+                      </div>
+                      <div style={{ fontSize:10, color:W.crimson, marginTop:6, fontWeight:600 }}>
+                        💡 設定 → 月目標を入力すると残り表示
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           )}
 
@@ -1265,10 +1309,12 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
 }
 
 // ── Screen: 設定 ───────────────────────────────────────────────────────────
-function ScreenSettings({ dark, setDark, players, onRefresh }) {
+function ScreenSettings({ dark, setDark, players, teamGoal, onSaveTeamGoal, onRefresh }) {
   const [goalEdit, setGoalEdit] = useState(null);
   const [goalVal, setGoalVal]   = useState('');
   const [saving, setSaving]     = useState(false);
+  const [teamGoalEdit, setTeamGoalEdit] = useState(false);
+  const [teamGoalVal,  setTeamGoalVal]  = useState('');
 
   const handleSaveGoal = async (player) => {
     if (!goalVal) return;
@@ -1319,8 +1365,55 @@ function ScreenSettings({ dark, setDark, players, onRefresh }) {
         />
       </SectionGroup>
 
+      {/* Team monthly goal */}
+      <SectionGroup title="チーム月目標" dark={dark}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px' }}>
+          <div style={{
+            width:36, height:36, borderRadius:10,
+            background:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+            color:'#fff', display:'flex', alignItems:'center', justifyContent:'center',
+            fontFamily:FSERIF, fontSize:18, fontWeight:600, flexShrink:0,
+          }}>目</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:dark?W.bone:W.ink }}>店舗合計の月目標</div>
+            {teamGoalEdit ? (
+              <input
+                autoFocus type="tel" inputMode="numeric"
+                value={teamGoalVal}
+                onChange={e => setTeamGoalVal(e.target.value.replace(/[^0-9]/g,''))}
+                onBlur={async () => {
+                  if (teamGoalVal !== '') await onSaveTeamGoal(teamGoalVal);
+                  setTeamGoalEdit(false);
+                }}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter') { if (teamGoalVal !== '') await onSaveTeamGoal(teamGoalVal); setTeamGoalEdit(false); }
+                }}
+                style={{
+                  fontSize:16, fontFamily:FSERIF, fontWeight:500, color:W.crimson,
+                  background:'transparent', borderBottom:`1px solid ${W.crimson}`,
+                  padding:'2px 0', width:160, marginTop:2,
+                }}
+                placeholder="例: 8000000"
+              />
+            ) : (
+              <div style={{ fontSize:18, fontFamily:FSERIF, fontWeight:500, color: teamGoal>0?W.crimson:(dark?W.boneMute:W.inkMute), marginTop:2 }}>
+                {teamGoal > 0 ? yen(teamGoal) : '未設定'}
+              </div>
+            )}
+          </div>
+          <div onClick={() => { setTeamGoalEdit(true); setTeamGoalVal(teamGoal>0?String(teamGoal):''); }}
+            style={{
+              fontSize:11, color:W.crimson, fontFamily:FSANS, fontWeight:600,
+              cursor:'pointer', padding:'6px 12px', borderRadius:999,
+              background: dark?'rgba(255,107,138,0.15)':'rgba(255,107,138,0.10)',
+            }}>
+            {teamGoal > 0 ? '編集' : '設定'}
+          </div>
+        </div>
+      </SectionGroup>
+
       {/* Monthly goals per staff */}
-      <SectionGroup title="月目標" dark={dark}>
+      <SectionGroup title="スタッフ別月目標" dark={dark}>
         {players.map((p, i) => (
           <React.Fragment key={p.id}>
             {i > 0 && <div style={{ height:0.5, background:dark?W.hairlineD:W.hairline, marginLeft:46 }}/>}
@@ -1419,6 +1512,7 @@ function App() {
   });
   const [players, setPlayers]           = useState([]);
   const [sales, setSales]               = useState([]);
+  const [teamGoal, setTeamGoal]         = useState(0);
   const [loading, setLoading]           = useState(true);
   const [currentPlayer, setCurrentPlayer] = useState(() => {
     const stored = localStorage.getItem('currentPlayer');
@@ -1426,14 +1520,21 @@ function App() {
   });
 
   const loadData = useCallback(async () => {
-    // Load all sales data (we only have ~500 rows total, no date filter needed)
-    const [{ data:pl }, { data:sl }] = await Promise.all([
+    const [{ data:pl }, { data:sl }, { data:settings }] = await Promise.all([
       db.from('players').select('*').eq('active', true).order('name'),
       db.from('sales').select('*').order('date', { ascending: false }).limit(5000),
+      db.from('settings').select('*').eq('key', 'team_monthly_goal').maybeSingle().then(r => ({ data: [r.data].filter(Boolean) })),
     ]);
     if (pl) setPlayers(pl);
     if (sl) setSales(sl);
+    if (settings && settings[0]) setTeamGoal(Number(settings[0].value) || 0);
     setLoading(false);
+  }, []);
+
+  const saveTeamGoal = useCallback(async (val) => {
+    const n = Number(val) || 0;
+    setTeamGoal(n);
+    await db.from('settings').upsert({ key: 'team_monthly_goal', value: n }, { onConflict: 'key' });
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -1476,10 +1577,10 @@ function App() {
       {/* Screen area */}
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
         {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
-        {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading}/>}
+        {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal}/>}
         {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
         {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
-        {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} onRefresh={loadData}/>}
+        {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData}/>}
         <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
       </div>
 
