@@ -125,6 +125,22 @@ const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
 const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
 const db = window.supabase.createClient(SB_URL, SB_KEY);
 
+// ── AI Projection API (旧 GAS の Gemini 予測エンドポイント) ──────────────
+const GAS_API = 'https://script.google.com/macros/s/AKfycbz6NovgFy26QEZ5_GI3ci0nu97sP-O0MdjK8GMIUezy3GgCRbPEwqVYka4RLuvjO_RIwQ/exec';
+const fetchAIProjections = async (month) => {
+  try {
+    const r = await fetch(`${GAS_API}?action=getMonthlyProjection&month=${month}&_=${Date.now()}`);
+    const data = await r.json();
+    if (!data || !data.projections) return null;
+    const map = {};
+    for (const p of data.projections) map[p.name] = p;
+    return map; // { playerName: { current, projected_add, projected_total } }
+  } catch (e) {
+    console.warn('AI projection fetch failed:', e);
+    return null;
+  }
+};
+
 // ── Utils ─────────────────────────────────────────────────────────────────
 const yen   = n => '¥' + Math.round(n).toLocaleString('ja-JP');
 const yenK  = n => n >= 10000 ? (n/10000).toFixed(n>=100000?0:1)+'万' : '¥'+Math.round(n).toLocaleString();
@@ -290,6 +306,38 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
   const total = Object.entries(amounts).filter(([k]) => !k.startsWith('_')).reduce((a,[,v]) => a+v, 0);
   const totalAmt = amounts._total || total;
 
+  // Daily target: (goal - month_sales_excluding_today) / remaining_days_including_today
+  const dailyTarget = useMemo(() => {
+    if (!currentPlayer || !currentPlayer.monthly_goal) return 0;
+    const ym = selDateStr.slice(0,7);
+    // Sum of this player's month sales EXCLUDING the selected day
+    const otherDays = sales
+      .filter(s => s.player === currentPlayer.name && s.date.startsWith(ym) && s.date !== selDateStr)
+      .reduce((a,s) => a+s.amount, 0);
+    const remaining = currentPlayer.monthly_goal - otherDays;
+    if (remaining <= 0) return 0;
+    // Days remaining (including selected day) through end of month
+    const [y,m,d] = selDateStr.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const daysLeft = lastDay - d + 1;
+    return daysLeft > 0 ? remaining / daysLeft : 0;
+  }, [currentPlayer, sales, selDateStr]);
+
+  const monthRemaining = useMemo(() => {
+    if (!currentPlayer || !currentPlayer.monthly_goal) return 0;
+    const ym = selDateStr.slice(0,7);
+    const monthSales = sales
+      .filter(s => s.player === currentPlayer.name && s.date.startsWith(ym) && s.date !== selDateStr)
+      .reduce((a,s) => a+s.amount, 0) + totalAmt;
+    return currentPlayer.monthly_goal - monthSales;
+  }, [currentPlayer, sales, selDateStr, totalAmt]);
+
+  const monthDaysLeft = useMemo(() => {
+    const [y,m,d] = selDateStr.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    return lastDay - d + 1;
+  }, [selDateStr]);
+
   const handleKey = (k) => {
     setAmounts(prev => {
       const cur = String(prev[activeStore]);
@@ -358,18 +406,30 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
       {/* Total card */}
       <div style={{ padding:'0 16px 10px' }}>
         <div style={{
-          background:`linear-gradient(135deg, ${dark?'#241B14':'#FFF8EA'}, ${dark?W.sumi2:'#FFFCF5'})`,
-          border:`0.5px solid ${W.gold}40`, borderRadius:14, padding:'12px 16px',
+          ...glassStyle(dark),
+          borderRadius:18, padding:'12px 16px',
           display:'flex', alignItems:'center', justifyContent:'space-between',
         }}>
           <div>
             <div style={{ fontSize:9, letterSpacing:2, color:dark?W.boneMute:W.inkMute }}>本日合計</div>
-            <div style={{ fontFamily:FSERIF, fontSize:26, fontWeight:600, color:dark?W.bone:W.ink, marginTop:1 }}>
+            <div style={{ fontFamily:FSERIF, fontSize:28, fontWeight:400, color:dark?W.bone:W.ink, marginTop:1, letterSpacing:-0.5 }}>
               {yen(totalAmt)}
             </div>
           </div>
-          <div style={{ textAlign:'right', fontSize:9, color:dark?W.boneMute:W.inkMute, letterSpacing:1 }}>
-            {selDateStr}
+          <div style={{ textAlign:'right' }}>
+            {dailyTarget > 0 ? (
+              <>
+                <div style={{ fontSize:9, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute }}>今日のノルマ</div>
+                <div style={{ fontFamily:FSERIF, fontSize:18, fontWeight:500, color: totalAmt >= dailyTarget ? W.pine : W.crimson, marginTop:1, lineHeight:1 }}>
+                  {totalAmt >= dailyTarget ? '✓ 達成' : yen(Math.round(dailyTarget))}
+                </div>
+                <div style={{ fontSize:8.5, color:dark?W.boneMute:W.inkMute, marginTop:2, fontFamily:FMONO }}>
+                  月残 {yen(Math.max(monthRemaining,0))} / {monthDaysLeft}日
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize:9, color:dark?W.boneMute:W.inkMute, letterSpacing:1 }}>{selDateStr}</div>
+            )}
           </div>
         </div>
       </div>
@@ -508,7 +568,7 @@ function PlayerChip({ player, dark, players, onSelect }) {
 }
 
 // ── Screen: ランキング ────────────────────────────────────────────────────
-function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
+function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProjLoading }) {
   const [mode, setMode] = useState('week'); // 'week' | 'month'
   const now = new Date();
 
@@ -568,11 +628,17 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
   }, [sales, mode, activeWeek, weekEnd, activeMonth]);
 
   const rawRanking = useMemo(() => rankBySales(filtered), [filtered]);
-  // Enrich with per-player goal info
+  // Enrich with per-player goal info + AI projection
+  const isCurMonthForProj = mode === 'month' && activeMonth === curMonthYM;
   const ranking = useMemo(() => rawRanking.map(r => {
     const p = players.find(x => x.name === r.player);
-    return { ...r, goal: p?.monthly_goal || 0 };
-  }), [rawRanking, players]);
+    const proj = (isCurMonthForProj && aiProj) ? aiProj[r.player] : null;
+    return {
+      ...r,
+      goal: p?.monthly_goal || 0,
+      aiProjected: proj?.projected_total || null,
+    };
+  }), [rawRanking, players, aiProj, isCurMonthForProj]);
   const totalSales = ranking.reduce((a,r) => a+r.total, 0);
 
   // Determine period info for labels / projection
@@ -648,14 +714,24 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
           {/* Personal goal progress list (月間 only) */}
           {mode === 'month' && ranking.some(r => r.goal > 0) && (
             <div style={{ margin:'0 16px 12px', ...glassStyle(dark), borderRadius:20, padding:14 }}>
-              <div style={{ fontSize:10, letterSpacing:2, color:dark?W.boneMute:W.inkMute, textTransform:'uppercase', marginBottom:10, paddingLeft:2 }}>
-                個人月目標 · 残り
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10, paddingLeft:2 }}>
+                <div style={{ fontSize:10, letterSpacing:2, color:dark?W.boneMute:W.inkMute, textTransform:'uppercase' }}>
+                  個人月目標 · 残り
+                </div>
+                {isCurMonthForProj && (
+                  <div style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, color:aiProj?W.gold:(dark?W.boneMute:W.inkMute), padding:'2px 7px', borderRadius:999, background: aiProj ? `${W.gold}18` : 'transparent' }}>
+                    {aiProjLoading ? <>⏳ AI 予測計算中…</> : aiProj ? <><span style={{ display:'flex' }}>{I.sparkle}</span>AI 着地予測</> : null}
+                  </div>
+                )}
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {ranking.filter(r => r.goal > 0).sort((a,b) => (b.total/b.goal) - (a.total/a.goal)).map(r => {
                   const remaining = Math.max(r.goal - r.total, 0);
                   const pct = Math.min(r.total/r.goal*100, 100);
                   const achieved = r.total >= r.goal;
+                  const aiP = r.aiProjected;
+                  const aiPct = aiP ? Math.round(aiP/r.goal*100) : null;
+                  const aiAchievable = aiP && aiP >= r.goal;
                   return (
                     <div key={r.player} style={{
                       padding:'10px 12px', borderRadius:14,
@@ -681,6 +757,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
                         background: dark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)',
                         position:'relative', overflow:'hidden',
                       }}>
+                        {/* Current actual */}
                         <div style={{
                           position:'absolute', left:0, top:0, bottom:0,
                           width: `${pct}%`,
@@ -690,18 +767,35 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal }) {
                           borderRadius:3,
                           boxShadow: `0 0 8px ${achieved?W.pine:W.crimson}66`,
                         }}/>
+                        {/* AI projected — striped overlay */}
+                        {aiP && aiP > r.total && (
+                          <div style={{
+                            position:'absolute', left:`${pct}%`, top:0, bottom:0,
+                            width: `${Math.min((aiP-r.total)/r.goal*100, 100-pct)}%`,
+                            background:`repeating-linear-gradient(45deg, ${W.gold}88, ${W.gold}88 3px, ${W.gold}33 3px, ${W.gold}33 6px)`,
+                          }}/>
+                        )}
                       </div>
                       <div style={{ display:'flex', justifyContent:'space-between', marginTop:4, fontSize:9, fontFamily:FMONO, color:dark?W.boneMute:W.inkMute }}>
                         <span><span style={{ fontWeight:700, color:dark?W.bone:W.ink }}>{yen(r.total)}</span> / {yen(r.goal)}</span>
                         <span style={{ color: achieved?W.pine:W.crimson, fontWeight:700 }}>{Math.round(r.total/r.goal*100)}%</span>
                       </div>
+                      {aiP && !achieved && (
+                        <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:4, fontSize:9, fontFamily:FMONO, color:W.gold }}>
+                          <span style={{ display:'flex' }}>{I.sparkle}</span>
+                          <span>AI予測 着地 <span style={{ fontWeight:700 }}>{yen(Math.round(aiP))}</span></span>
+                          <span style={{ marginLeft:'auto', fontWeight:700, color: aiAchievable ? W.pine : W.crimson }}>
+                            {aiPct}% {aiAchievable ? '見込◎' : '届かず'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
               {ranking.some(r => r.goal === 0) && (
                 <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, textAlign:'center', marginTop:10, paddingTop:8, borderTop:`0.5px solid ${dark?W.hairlineD:W.hairline}` }}>
-                  💡 設定 → スタッフ別月目標 で未設定の {ranking.filter(r=>r.goal===0).length}名 にも目標を追加できます
+                  💡 設定 → 個人月目標 で未設定の {ranking.filter(r=>r.goal===0).length}名 にも目標を追加できます
                 </div>
               )}
             </div>
@@ -1471,6 +1565,8 @@ function App() {
   const [sales, setSales]               = useState([]);
   const [teamGoal, setTeamGoal]         = useState(0);
   const [loading, setLoading]           = useState(true);
+  const [aiProj, setAiProj]             = useState(null);
+  const [aiProjLoading, setAiProjLoading] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState(() => {
     const stored = localStorage.getItem('currentPlayer');
     return stored ? JSON.parse(stored) : null;
@@ -1495,6 +1591,17 @@ function App() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Load AI projections for current month (slow — 11 players × Gemini calls)
+  useEffect(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    setAiProjLoading(true);
+    fetchAIProjections(ym).then(p => {
+      setAiProj(p);
+      setAiProjLoading(false);
+    });
+  }, []);
 
   // Keep currentPlayer synced with players list (in case goal changed)
   // Auto-select first player if none selected
@@ -1534,7 +1641,7 @@ function App() {
       {/* Screen area */}
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
         {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
-        {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal}/>}
+        {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal} aiProj={aiProj} aiProjLoading={aiProjLoading}/>}
         {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
         {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
         {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData}/>}
