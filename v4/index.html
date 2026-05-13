@@ -374,27 +374,66 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
         </div>
       </div>
 
-      {/* Store grid */}
-      <div style={{ padding:'0 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+      {/* Store cards with native input — 1 column for big tap targets */}
+      <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:8, overflowY:'auto' }}>
         {STORES.map(s => {
-          const on = activeStore === s.id;
           const v = amounts[s.id] || 0;
+          const isActive = activeStore === s.id;
           return (
-            <div key={s.id} onClick={() => setActiveStore(s.id)} style={{
-              background:dark?W.sumi2:'#FFFCF5',
-              border:on?`1.5px solid ${s.color}`:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
-              borderRadius:12, padding:'10px 12px', cursor:'pointer',
-              boxShadow:on?`0 0 0 3px ${s.color}18, 0 4px 10px ${s.color}25`:'none',
+            <div key={s.id} style={{
+              ...glassStyle(dark),
+              border:isActive ? `1.5px solid ${s.color}` : (dark?'1px solid rgba(255,255,255,0.10)':'1px solid rgba(255,255,255,0.65)'),
+              borderRadius:18, padding:'12px 16px',
+              boxShadow: isActive ? `0 0 0 4px ${s.color}22, 0 8px 24px ${s.color}30` : (dark?'0 12px 36px rgba(0,0,0,0.40)':'0 8px 24px rgba(120,80,140,0.10)'),
               transition:'all 0.15s',
             }}>
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                <div style={{ width:6, height:6, borderRadius:'50%', background:s.color, boxShadow:on?`0 0 5px ${s.color}`:'none' }}/>
-                <div style={{ fontFamily:FSERIF, fontSize:16, fontWeight:600, color:dark?W.bone:W.ink }}>{s.name}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', background:s.color, boxShadow:`0 0 8px ${s.color}80`, flexShrink:0 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FSANS, fontSize:16, fontWeight:700, color:dark?W.bone:W.ink, letterSpacing:0.5 }}>{s.name}</div>
+                </div>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={v || ''}
+                  placeholder="0"
+                  onFocus={() => setActiveStore(s.id)}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/[^0-9]/g,'');
+                    const n = raw === '' ? 0 : Math.min(Number(raw), 9999999);
+                    setAmounts(prev => ({ ...prev, [s.id]: n }));
+                  }}
+                  style={{
+                    width:140, textAlign:'right',
+                    fontFamily:FSERIF, fontSize:24, fontWeight:400,
+                    color:v ? (dark?W.bone:W.ink) : (dark?W.boneMute:W.inkMute),
+                    background:'transparent', border:'none', outline:'none',
+                    padding:'4px 0',
+                  }}
+                />
+                <div style={{ fontFamily:FSERIF, fontSize:18, color:dark?W.boneMute:W.inkMute, marginLeft:-8 }}>円</div>
               </div>
-              <div style={{ fontSize:7, letterSpacing:2, color:dark?W.boneMute:W.inkMute, fontFamily:FMONO, marginBottom:4 }}>{s.kana}</div>
-              <div style={{ fontFamily:FMONO, fontSize:v?16:13, fontWeight:600, color:v?(dark?W.bone:W.ink):(dark?W.boneMute:W.inkMute) }}>
-                {v ? yen(v) : '¥ ―'}
-              </div>
+              {/* Quick adders — only visible when active */}
+              {isActive && (
+                <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'flex-end' }}>
+                  {[1000,5000,10000].map(q => (
+                    <div key={q} onClick={() => handleQuick(q)} style={{
+                      padding:'5px 12px', borderRadius:999,
+                      ...glassStyle(dark),
+                      fontSize:11, fontFamily:FMONO, fontWeight:700,
+                      color:s.color, cursor:'pointer',
+                      borderColor: `${s.color}44`,
+                    }}>+{q/1000}k</div>
+                  ))}
+                  <div onClick={() => setAmounts(prev => ({ ...prev, [s.id]: 0 }))} style={{
+                    padding:'5px 12px', borderRadius:999,
+                    ...glassStyle(dark),
+                    fontSize:11, fontFamily:FMONO, fontWeight:700,
+                    color:dark?W.boneMute:W.inkMute, cursor:'pointer',
+                  }}>クリア</div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -402,51 +441,23 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
 
       <div style={{ flex:1 }}/>
 
-      {/* Numpad */}
-      <div style={{ background:dark?'#0E0B09':'#E8DFCC', borderTop:`0.5px solid ${dark?W.hairlineD:W.hairline}`, padding:'10px 12px 0' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 4px 8px' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <div style={{ width:7, height:7, borderRadius:'50%', background:activeStoreObj.color, boxShadow:`0 0 6px ${activeStoreObj.color}` }}/>
-            <div style={{ fontFamily:FSERIF, fontSize:13, fontWeight:600, color:dark?W.bone:W.ink }}>{activeStoreObj.name} 入力中</div>
-          </div>
-          <div style={{ display:'flex', gap:5 }}>
-            {[1000,5000,10000].map(q => (
-              <div key={q} onClick={() => handleQuick(q)} style={{
-                padding:'3px 8px', borderRadius:999,
-                background:dark?W.sumi3:'#FFFCF5',
-                border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
-                fontSize:10, fontFamily:FMONO, fontWeight:600,
-                color:dark?W.bone:W.ink, cursor:'pointer',
-              }}>+{q/1000}k</div>
-            ))}
-          </div>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
-          {['1','2','3','4','5','6','7','8','9','000','0','⌫'].map((k,i) => {
-            const isDel = k==='⌫', isAlt = k==='000'||isDel;
-            return (
-              <div key={k} onClick={() => handleKey(k)} style={{
-                height:44, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center',
-                background:isAlt?(dark?W.sumi3:'#D9CFB8'):(dark?'#241D17':'#FFFCF5'),
-                color:isDel?W.crimsonL:(dark?W.bone:W.ink),
-                fontFamily:FSERIF, fontSize:20, fontWeight:500, cursor:'pointer',
-                boxShadow:dark?'0 1px 0 rgba(0,0,0,0.4)':'0 1px 0 rgba(0,0,0,0.07)',
-              }}>{k}</div>
-            );
-          })}
-        </div>
-        <div style={{ marginTop:8, paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 80px)' }}>
-          <div onClick={handleSave} style={{
-            height:48, borderRadius:12, cursor:'pointer',
-            background:saved?`linear-gradient(135deg, #2C5F4B, #1F3A2E)`:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
-            color:W.goldL, display:'flex', alignItems:'center', justifyContent:'center',
-            fontFamily:FSERIF, fontSize:16, fontWeight:600, letterSpacing:4,
-            boxShadow:saved?`0 4px 16px #2C5F4B50`:`0 4px 16px ${W.crimson}50, inset 0 1px 0 ${W.goldL}30`,
-            opacity:(saving||!hasInput||!currentPlayer)?0.6:1,
-            transition:'all 0.2s',
-          }}>
-            {saving ? '保存中…' : saved ? '✓ 記録完了' : '記録する'}
-          </div>
+      {/* Save button — floating above bottom nav */}
+      <div style={{ padding:'12px 16px', paddingBottom:'calc(env(safe-area-inset-bottom,16px) + 88px)' }}>
+        <div onClick={handleSave} style={{
+          height:54, borderRadius:18, cursor:'pointer',
+          background:saved
+            ? `linear-gradient(135deg, #00C896, #00A07A)`
+            : `linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+          color:'#fff',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontFamily:FSANS, fontSize:16, fontWeight:700, letterSpacing:3,
+          boxShadow: saved
+            ? '0 12px 28px rgba(0,200,150,0.40), inset 0 1px 0 rgba(255,255,255,0.4)'
+            : `0 12px 28px ${W.crimson}50, inset 0 1px 0 rgba(255,255,255,0.4)`,
+          opacity:(saving||!hasInput||!currentPlayer)?0.45:1,
+          transition:'all 0.2s',
+        }}>
+          {saving ? '保存中…' : saved ? '✓ 記録完了' : '記録する'}
         </div>
       </div>
     </div>
