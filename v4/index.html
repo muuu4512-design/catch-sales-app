@@ -125,7 +125,77 @@ const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
 const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
 const db = window.supabase.createClient(SB_URL, SB_KEY);
 
-// ── AI Projection API (旧 GAS の Gemini 予測エンドポイント) ──────────────
+// ── Local AI Predictor (DOW × 6ヶ月加重平均ベース) ────────────────────────
+// 各プレイヤーの曜日パターン + 直近月加重で月末着地を予測
+function predictMonthEnd(playerName, sales, refDate = new Date()) {
+  const y  = refDate.getFullYear();
+  const m  = refDate.getMonth();
+  const ym = `${y}-${String(m+1).padStart(2,'0')}`;
+  const today = refDate.getDate();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+
+  // 当月実績
+  const recorded = sales
+    .filter(s => s.player === playerName && s.date.startsWith(ym))
+    .reduce((a,s) => a+s.amount, 0);
+
+  // 既に月末を過ぎている
+  if (today >= daysInMonth) return { projected_total: recorded, projected_add: 0, current: recorded, sample_days: 0 };
+
+  // 過去6ヶ月の日次データを集計
+  const sixMoStart = new Date(y, m - 6, 1);
+  const sixMoStartStr = `${sixMoStart.getFullYear()}-${String(sixMoStart.getMonth()+1).padStart(2,'0')}-01`;
+  const dayAmounts = {};
+  for (const s of sales) {
+    if (s.player !== playerName) continue;
+    if (s.date < sixMoStartStr || s.date.startsWith(ym)) continue;
+    dayAmounts[s.date] = (dayAmounts[s.date] || 0) + s.amount;
+  }
+
+  // 曜日別: 日付ごとに重み (新しい月ほど高い) を付けて集計
+  const dowWeighted = [[],[],[],[],[],[],[]]; // 日〜土
+  for (const [date, amount] of Object.entries(dayAmounts)) {
+    const dow = new Date(date + 'T00:00:00').getDay();
+    const [dy,dm] = date.split('-').map(Number);
+    const monthsAgo = (y - dy) * 12 + (m+1 - dm);
+    const weight = Math.max(1, 7 - monthsAgo); // 1ヶ月前=6, 2=5, ..., 6=1
+    dowWeighted[dow].push({ amount, weight });
+  }
+
+  // 加重平均
+  const dowAvg = dowWeighted.map(arr => {
+    if (arr.length === 0) return 0;
+    const wsum = arr.reduce((a,b) => a + b.weight, 0);
+    const total = arr.reduce((a,b) => a + b.amount * b.weight, 0);
+    return wsum > 0 ? total / wsum : 0;
+  });
+
+  // 残り日 (今日除く翌日以降) を曜日別平均で積み上げ
+  let projected_add = 0;
+  for (let d = today + 1; d <= daysInMonth; d++) {
+    const dow = new Date(y, m, d).getDay();
+    projected_add += dowAvg[dow];
+  }
+
+  return {
+    projected_total: Math.round(recorded + projected_add),
+    projected_add:   Math.round(projected_add),
+    current:         recorded,
+    sample_days:     Object.keys(dayAmounts).length,
+  };
+}
+
+// 全プレイヤーの予測マップ生成
+function buildAllProjections(sales, players, refDate = new Date()) {
+  const map = {};
+  for (const p of players) {
+    const r = predictMonthEnd(p.name, sales, refDate);
+    map[p.name] = r;
+  }
+  return map;
+}
+
+// 旧 GAS endpoint (AI Gemini版) — フォールバック用に維持
 const GAS_API = 'https://script.google.com/macros/s/AKfycbz6NovgFy26QEZ5_GI3ci0nu97sP-O0MdjK8GMIUezy3GgCRbPEwqVYka4RLuvjO_RIwQ/exec';
 const fetchAIProjections = async (month) => {
   try {
@@ -134,7 +204,7 @@ const fetchAIProjections = async (month) => {
     if (!data || !data.projections) return null;
     const map = {};
     for (const p of data.projections) map[p.name] = p;
-    return map; // { playerName: { current, projected_add, projected_total } }
+    return map;
   } catch (e) {
     console.warn('AI projection fetch failed:', e);
     return null;
@@ -1604,16 +1674,13 @@ function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Load AI projections for current month (slow — 11 players × Gemini calls)
+  // Compute local AI projection (DOW × 6mo weighted) — instant, uses rich Supabase history
   useEffect(() => {
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    setAiProjLoading(true);
-    fetchAIProjections(ym).then(p => {
-      setAiProj(p);
-      setAiProjLoading(false);
-    });
-  }, []);
+    if (sales.length === 0 || players.length === 0) return;
+    const proj = buildAllProjections(sales, players, new Date());
+    setAiProj(proj);
+    setAiProjLoading(false);
+  }, [sales, players]);
 
   // Keep currentPlayer synced with players list (in case goal changed)
   // Auto-select first player if none selected
