@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="売上"/>
+<title>キャッチ売上 // 液体</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@300;400;500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { height: 100%; -webkit-tap-highlight-color: transparent; }
+  body {
+    height: 100%; overflow: hidden;
+    font-family: "Inter", "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; }
+  ::-webkit-scrollbar { display: none; }
+  input, button { outline: none; border: none; background: none; }
+
+  /* Mesh gradient backgrounds — light/dark */
+  .mesh-light {
+    background:
+      radial-gradient(ellipse 700px 500px at 12% 10%, #FFD3E2 0%, transparent 55%),
+      radial-gradient(ellipse 600px 480px at 88% 18%, #E2D5FF 0%, transparent 60%),
+      radial-gradient(ellipse 720px 520px at 90% 92%, #D0F0E6 0%, transparent 60%),
+      radial-gradient(ellipse 640px 480px at 8% 88%, #FFE2C7 0%, transparent 55%),
+      #F8F4EE;
+  }
+  .mesh-dark {
+    background:
+      radial-gradient(ellipse 720px 500px at 14% 10%, #2A3A8A 0%, transparent 55%),
+      radial-gradient(ellipse 640px 480px at 88% 22%, #7A4FBE 0%, transparent 55%),
+      radial-gradient(ellipse 720px 500px at 88% 90%, #1F8C8C 0%, transparent 55%),
+      radial-gradient(ellipse 600px 460px at 10% 90%, #4A2A6A 0%, transparent 55%),
+      #0A0E1A;
+  }
+
+  /* Frosted glass surfaces */
+  .glass {
+    background: rgba(255,255,255,0.55);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.65);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.8),
+      0 8px 24px rgba(120,80,140,0.10);
+  }
+  .glass-dark {
+    background: rgba(20,24,40,0.45);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      0 12px 36px rgba(0,0,0,0.40);
+  }
+
+  .num-serif {
+    font-family: "Noto Serif Display","Times New Roman",serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// ── Design Tokens: Liquid Glass ────────────────────────────────────────────
+const W = {
+  // light surfaces
+  paper:'#F8F4EE', paper2:'rgba(255,255,255,0.55)',
+  ink:'#1A1428', ink2:'#3D2F4A', inkMute:'rgba(26,20,40,0.55)',
+  hairline:'rgba(26,20,40,0.10)',
+  // dark surfaces
+  sumi:'#0A0E1A', sumi2:'rgba(20,24,40,0.45)', sumi3:'rgba(40,46,72,0.5)',
+  bone:'#F4EEFF', boneMute:'rgba(244,238,255,0.55)',
+  hairlineD:'rgba(255,255,255,0.10)',
+  // accent (coral→rose gradient endpoints)
+  crimson:'#FF6B8A', crimsonD:'#E94F73', crimsonL:'#FF8DB4',
+  // secondary
+  gold:'#7B61FF',  goldL:'#A28BFF',    // iris purple
+  pine:'#00C896', ind:'#3A5275',       // mint
+};
+const STORES = [
+  { id:'gochi', name:'ごち', kana:'GO-CHI', color:'#FF8DB4' },  // coral pink
+  { id:'dosu',  name:'どす', kana:'DO-SU',  color:'#7B61FF' },  // iris purple
+  { id:'goro',  name:'ごろ', kana:'GO-RO',  color:'#00C896' },  // mint
+  { id:'uo',    name:'うお', kana:'U-O',    color:'#3DC8FF' },  // sky cyan
+];
+const FSERIF = '"Noto Serif Display","Times New Roman",serif';
+const FSANS  = '"Inter","SF Pro Rounded",-apple-system,system-ui,sans-serif';
+const FMONO  = '"JetBrains Mono","SF Mono",ui-monospace,monospace';
+
+// Glass surface helper
+const glassStyle = (dark) => dark ? {
+  background:'rgba(20,24,40,0.45)',
+  WebkitBackdropFilter:'blur(28px) saturate(180%)',
+  backdropFilter:'blur(28px) saturate(180%)',
+  border:'1px solid rgba(255,255,255,0.10)',
+  boxShadow:'inset 0 1px 0 rgba(255,255,255,0.10), 0 12px 36px rgba(0,0,0,0.40)',
+} : {
+  background:'rgba(255,255,255,0.55)',
+  WebkitBackdropFilter:'blur(28px) saturate(180%)',
+  backdropFilter:'blur(28px) saturate(180%)',
+  border:'1px solid rgba(255,255,255,0.65)',
+  boxShadow:'inset 0 1px 0 rgba(255,255,255,0.8), 0 8px 24px rgba(120,80,140,0.10)',
+};
+
+// ── Supabase ───────────────────────────────────────────────────────────────
+const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
+const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
+const db = window.supabase.createClient(SB_URL, SB_KEY);
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+const yen   = n => '¥' + Math.round(n).toLocaleString('ja-JP');
+const yenK  = n => n >= 10000 ? (n/10000).toFixed(n>=100000?0:1)+'万' : '¥'+Math.round(n).toLocaleString();
+const toYMD = d => { const p=v=>String(v).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const weekdays = ['日','月','火','水','木','金','土'];
+const todayYMD = () => toYMD(new Date());
+const halfStart = (dateStr) => {
+  const d = new Date(dateStr);
+  const day = d.getDate();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${day < 16 ? '01' : '16'}`;
+};
+
+// Get Monday of the week containing the given date
+const weekStartMonday = (dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay(); // 0=Sun, 1=Mon, ...
+  const delta = dow === 0 ? -6 : 1 - dow; // shift to Monday
+  d.setDate(d.getDate() + delta);
+  return toYMD(d);
+};
+// Get all weeks present in sales
+const allWeekStarts = (sales) => {
+  const set = new Set(sales.map(s => weekStartMonday(s.date)));
+  return [...set].sort().reverse();
+};
+// Day-of-week filter for weekly ranking: exclude 金(5) and 土(6)
+const isWeeklyRankingDay = (dateStr) => {
+  const dow = new Date(dateStr + 'T00:00:00').getDay();
+  return dow !== 5 && dow !== 6; // exclude Fri and Sat
+};
+// group sales by player for a set of sales rows
+const rankBySales = (sales) => {
+  const map = {};
+  for (const s of sales) {
+    if (!map[s.player]) map[s.player] = 0;
+    map[s.player] += s.amount;
+  }
+  return Object.entries(map)
+    .map(([player,total]) => ({ player, total }))
+    .sort((a,b) => b.total - a.total);
+};
+
+// ── Inline Icons ──────────────────────────────────────────────────────────
+const I = {
+  edit:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.6"/></svg>,
+  trophy:  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v4a5 5 0 11-10 0V4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M7 6H4a2 2 0 002 4M17 6h3a2 2 0 01-2 4M10 14h4M9 20h6M12 14v6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  cal:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" strokeWidth="1.6"/><path d="M8 3v4M16 3v4M3.5 10h17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  user:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.6"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  gear:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-6.5l-1.4 1.4M7.9 16.1l-1.4 1.4m0-11l1.4 1.4m8.2 8.2l1.4 1.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  chev:    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  chevL:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  del:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  warn:    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2l9 16H1L10 2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M10 8v4M10 15v.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>,
+  crown:   <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M2 6l3 8h10l3-8-4 3-4-5-4 5-4-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="currentColor" fillOpacity="0.18"/></svg>,
+  sparkle: <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v3M8 12v3M1 8h3M12 8h3M3 3l2 2M11 11l2 2M13 3l-2 2M5 11l-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,
+  plus:    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+  check:   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+};
+
+// ── Shared Primitives ────────────────────────────────────────────────────
+function PageHeader({ title, sub, right, dark }) {
+  return (
+    <div style={{ padding:'14px 20px 10px', display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
+      <div>
+        {sub && <div style={{ fontFamily:FSANS, fontSize:10, fontWeight:500, letterSpacing:2, color:dark?W.boneMute:W.inkMute, textTransform:'uppercase' }}>{sub}</div>}
+        <div style={{ fontFamily:FSANS, fontSize:24, fontWeight:700, color:dark?W.bone:W.ink, letterSpacing:-0.5, lineHeight:1.15, marginTop:2 }}>{title}</div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function Card({ children, dark, style={}, pad=14 }) {
+  return (
+    <div style={{ ...glassStyle(dark), borderRadius:20, padding:pad, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function BottomNav({ active, dark, onNav }) {
+  const items = [
+    { id:'rec',  label:'記録',       icon:I.edit },
+    { id:'rank', label:'ランキング', icon:I.trophy },
+    { id:'cal',  label:'カレンダー', icon:I.cal },
+    { id:'me',   label:'個人',       icon:I.user },
+    { id:'set',  label:'設定',       icon:I.gear },
+  ];
+  return (
+    <div style={{
+      position:'absolute', left:12, right:12,
+      bottom:'calc(env(safe-area-inset-bottom,16px) + 8px)',
+      paddingTop:8, paddingBottom:8,
+      borderRadius:28,
+      ...glassStyle(dark),
+      zIndex:30,
+    }}>
+      <div style={{ display:'flex', justifyContent:'space-around' }}>
+        {items.map(it => {
+          const on = it.id === active;
+          return (
+            <div key={it.id} onClick={() => onNav(it.id)} style={{
+              display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+              color:on?W.crimson:(dark?W.boneMute:'rgba(26,20,40,0.45)'),
+              padding:'4px 14px', position:'relative', cursor:'pointer',
+              transition:'color 0.2s',
+            }}>
+              {on && <div style={{
+                position:'absolute', top:-6, left:'50%', transform:'translateX(-50%)',
+                width:32, height:32, borderRadius:'50%',
+                background:`radial-gradient(circle, ${W.crimsonL}33 0%, transparent 70%)`,
+                pointerEvents:'none',
+              }}/>}
+              <div style={{ width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>{it.icon}</div>
+              <div style={{ fontSize:9, fontWeight:600, letterSpacing:0.4, position:'relative' }}>{it.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Skeleton({ dark, w='100%', h=16, br=8 }) {
+  return <div style={{ width:w, height:h, borderRadius:br, background:dark?'#2A231D':'#E8DFCC', animation:'pulse 1.4s ease-in-out infinite' }}/>;
+}
+
+// ── Screen: 売上記録 ──────────────────────────────────────────────────────
+function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, onSaved }) {
+  const today = new Date();
+  const dates = Array.from({length:5}, (_,i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (4-i));
+    return d;
+  });
+  const [selDateIdx, setSelDateIdx] = useState(4);
+  const [activeStore, setActiveStore] = useState('dosu');
+  const [amounts, setAmounts] = useState({ gochi:0, dosu:0, goro:0, uo:0 });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const selDate = dates[selDateIdx];
+  const selDateStr = toYMD(selDate);
+
+  // Load existing sales for selected date+player
+  useEffect(() => {
+    if (!currentPlayer) return;
+    const existing = sales.filter(s => s.date === selDateStr && s.player === currentPlayer.name);
+    if (existing.length > 0) {
+      const m = { gochi:0, dosu:0, goro:0, uo:0 };
+      for (const s of existing) {
+        if (s.store && m[s.store] !== undefined) m[s.store] = s.amount;
+        else if (!s.store) {
+          // total mode - spread evenly as display only
+          m._total = s.amount;
+        }
+      }
+      setAmounts(m);
+    } else {
+      setAmounts({ gochi:0, dosu:0, goro:0, uo:0 });
+    }
+  }, [selDateStr, currentPlayer, sales]);
+
+  const total = Object.entries(amounts).filter(([k]) => !k.startsWith('_')).reduce((a,[,v]) => a+v, 0);
+  const totalAmt = amounts._total || total;
+
+  const handleKey = (k) => {
+    setAmounts(prev => {
+      const cur = String(prev[activeStore]);
+      let next;
+      if (k === '⌫') next = cur.length > 1 ? Number(cur.slice(0,-1)) : 0;
+      else next = Number(cur === '0' ? k : cur + k);
+      if (next > 9999999) next = prev[activeStore];
+      return { ...prev, [activeStore]: next };
+    });
+  };
+  const handleQuick = (add) => {
+    setAmounts(prev => ({ ...prev, [activeStore]: prev[activeStore] + add }));
+  };
+
+  const handleSave = async () => {
+    if (!currentPlayer || saving) return;
+    setSaving(true);
+    const hs = halfStart(selDateStr);
+    const rows = STORES.filter(s => amounts[s.id] > 0).map(s => ({
+      date: selDateStr, player: currentPlayer.name,
+      store: s.id, amount: amounts[s.id], half_month_start: hs,
+    }));
+    if (rows.length === 0) { setSaving(false); return; }
+
+    // Delete existing for this date+player, then insert
+    await db.from('sales').delete().eq('date', selDateStr).eq('player', currentPlayer.name);
+    const { error } = await db.from('sales').insert(rows);
+    setSaving(false);
+    if (!error) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      onSaved();
+    }
+  };
+
+  const activeStoreObj = STORES.find(s => s.id === activeStore);
+  const hasInput = Object.values(amounts).some((v,i) => typeof v === 'number' && v > 0);
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <PageHeader dark={dark} title="売上記録" sub="DAILY RECORD"
+        right={
+          <PlayerChip player={currentPlayer} dark={dark} players={players} onSelect={setCurrentPlayer}/>
+        }
+      />
+
+      {/* Date strip */}
+      <div style={{ padding:'0 16px 8px' }}>
+        <div style={{ display:'flex', gap:4, background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:12, padding:4 }}>
+          {dates.map((d,i) => {
+            const on = i === selDateIdx;
+            return (
+              <div key={i} onClick={() => setSelDateIdx(i)} style={{
+                flex:1, padding:'5px 0', textAlign:'center', cursor:'pointer',
+                background:on?(dark?W.crimson:W.ink):'transparent',
+                color:on?W.goldL:(dark?W.bone:W.ink), borderRadius:8,
+              }}>
+                <div style={{ fontSize:9, opacity:0.65, fontFamily:FSANS, letterSpacing:1 }}>{weekdays[d.getDay()]}</div>
+                <div style={{ fontSize:15, fontWeight:700, fontFamily:FSERIF, marginTop:1 }}>{d.getDate()}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Total card */}
+      <div style={{ padding:'0 16px 10px' }}>
+        <div style={{
+          background:`linear-gradient(135deg, ${dark?'#241B14':'#FFF8EA'}, ${dark?W.sumi2:'#FFFCF5'})`,
+          border:`0.5px solid ${W.gold}40`, borderRadius:14, padding:'12px 16px',
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize:9, letterSpacing:2, color:dark?W.boneMute:W.inkMute }}>本日合計</div>
+            <div style={{ fontFamily:FSERIF, fontSize:26, fontWeight:600, color:dark?W.bone:W.ink, marginTop:1 }}>
+              {yen(totalAmt)}
+            </div>
+          </div>
+          <div style={{ textAlign:'right', fontSize:9, color:dark?W.boneMute:W.inkMute, letterSpacing:1 }}>
+            {selDateStr}
+          </div>
+        </div>
+      </div>
+
+      {/* Store grid */}
+      <div style={{ padding:'0 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+        {STORES.map(s => {
+          const on = activeStore === s.id;
+          const v = amounts[s.id] || 0;
+          return (
+            <div key={s.id} onClick={() => setActiveStore(s.id)} style={{
+              background:dark?W.sumi2:'#FFFCF5',
+              border:on?`1.5px solid ${s.color}`:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+              borderRadius:12, padding:'10px 12px', cursor:'pointer',
+              boxShadow:on?`0 0 0 3px ${s.color}18, 0 4px 10px ${s.color}25`:'none',
+              transition:'all 0.15s',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                <div style={{ width:6, height:6, borderRadius:'50%', background:s.color, boxShadow:on?`0 0 5px ${s.color}`:'none' }}/>
+                <div style={{ fontFamily:FSERIF, fontSize:16, fontWeight:600, color:dark?W.bone:W.ink }}>{s.name}</div>
+              </div>
+              <div style={{ fontSize:7, letterSpacing:2, color:dark?W.boneMute:W.inkMute, fontFamily:FMONO, marginBottom:4 }}>{s.kana}</div>
+              <div style={{ fontFamily:FMONO, fontSize:v?16:13, fontWeight:600, color:v?(dark?W.bone:W.ink):(dark?W.boneMute:W.inkMute) }}>
+                {v ? yen(v) : '¥ ―'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ flex:1 }}/>
+
+      {/* Numpad */}
+      <div style={{ background:dark?'#0E0B09':'#E8DFCC', borderTop:`0.5px solid ${dark?W.hairlineD:W.hairline}`, padding:'10px 12px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 4px 8px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <div style={{ width:7, height:7, borderRadius:'50%', background:activeStoreObj.color, boxShadow:`0 0 6px ${activeStoreObj.color}` }}/>
+            <div style={{ fontFamily:FSERIF, fontSize:13, fontWeight:600, color:dark?W.bone:W.ink }}>{activeStoreObj.name} 入力中</div>
+          </div>
+          <div style={{ display:'flex', gap:5 }}>
+            {[1000,5000,10000].map(q => (
+              <div key={q} onClick={() => handleQuick(q)} style={{
+                padding:'3px 8px', borderRadius:999,
+                background:dark?W.sumi3:'#FFFCF5',
+                border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                fontSize:10, fontFamily:FMONO, fontWeight:600,
+                color:dark?W.bone:W.ink, cursor:'pointer',
+              }}>+{q/1000}k</div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
+          {['1','2','3','4','5','6','7','8','9','000','0','⌫'].map((k,i) => {
+            const isDel = k==='⌫', isAlt = k==='000'||isDel;
+            return (
+              <div key={k} onClick={() => handleKey(k)} style={{
+                height:44, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center',
+                background:isAlt?(dark?W.sumi3:'#D9CFB8'):(dark?'#241D17':'#FFFCF5'),
+                color:isDel?W.crimsonL:(dark?W.bone:W.ink),
+                fontFamily:FSERIF, fontSize:20, fontWeight:500, cursor:'pointer',
+                boxShadow:dark?'0 1px 0 rgba(0,0,0,0.4)':'0 1px 0 rgba(0,0,0,0.07)',
+              }}>{k}</div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop:8, paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 80px)' }}>
+          <div onClick={handleSave} style={{
+            height:48, borderRadius:12, cursor:'pointer',
+            background:saved?`linear-gradient(135deg, #2C5F4B, #1F3A2E)`:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+            color:W.goldL, display:'flex', alignItems:'center', justifyContent:'center',
+            fontFamily:FSERIF, fontSize:16, fontWeight:600, letterSpacing:4,
+            boxShadow:saved?`0 4px 16px #2C5F4B50`:`0 4px 16px ${W.crimson}50, inset 0 1px 0 ${W.goldL}30`,
+            opacity:(saving||!hasInput||!currentPlayer)?0.6:1,
+            transition:'all 0.2s',
+          }}>
+            {saving ? '保存中…' : saved ? '✓ 記録完了' : '記録する'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Player chip (header, clickable to change)
+function PlayerChip({ player, dark, players, onSelect }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position:'relative' }}>
+      <div onClick={() => setOpen(o=>!o)} style={{
+        display:'flex', alignItems:'center', gap:5,
+        padding:'5px 9px', background:dark?W.sumi2:'#FFFCF5',
+        border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+        borderRadius:999, color:dark?W.bone:W.ink, cursor:'pointer',
+      }}>
+        <div style={{
+          width:22, height:22, borderRadius:'50%',
+          background:`linear-gradient(135deg,${W.crimson},${W.crimsonD})`,
+          color:W.goldL, fontFamily:FSERIF, fontSize:12, fontWeight:600,
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>{player ? player.name[0] : '?'}</div>
+        <div style={{ fontSize:12, fontWeight:600 }}>{player ? player.name.split(' ')[1]||player.name : '選択'}</div>
+        <span style={{ color:dark?W.boneMute:W.inkMute }}>{I.chev}</span>
+      </div>
+      {open && (
+        <div style={{
+          position:'absolute', right:0, top:'calc(100% + 6px)',
+          background:dark?W.sumi2:'#FFFCF5',
+          border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+          borderRadius:12, overflow:'hidden',
+          boxShadow:'0 8px 24px rgba(0,0,0,0.2)',
+          zIndex:100, minWidth:140,
+        }}>
+          {players.map(p => (
+            <div key={p.id} onClick={() => { onSelect(p); setOpen(false); }} style={{
+              padding:'10px 14px', fontSize:13, fontWeight:500,
+              color:dark?W.bone:W.ink, cursor:'pointer',
+              background:(player&&player.id===p.id)?(dark?W.sumi3:W.paper2):'transparent',
+              borderBottom:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+            }}>{p.name}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Screen: ランキング ────────────────────────────────────────────────────
+function ScreenRanking({ dark, sales, players, loading }) {
+  const [mode, setMode] = useState('week'); // 'week' | 'month'
+  const now = new Date();
+
+  // Derive all available weeks (Mon-start) and months from data
+  const allWeeks = useMemo(() => allWeekStarts(sales), [sales]);
+  const allMonths = useMemo(() => {
+    const s = new Set(sales.map(r => r.date.slice(0,7)));
+    return [...s].sort().reverse();
+  }, [sales]);
+
+  const curMonthYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const curWeekKey = weekStartMonday(toYMD(now));
+
+  // Default: most recent period with data, or current if data exists
+  const defaultWeek  = allWeeks.includes(curWeekKey)   ? curWeekKey   : (allWeeks[0]  || curWeekKey);
+  const defaultMonth = allMonths.includes(curMonthYM)  ? curMonthYM   : (allMonths[0] || curMonthYM);
+
+  const [selWeek,  setSelWeek]  = useState(null);
+  const [selMonth, setSelMonth] = useState(null);
+
+  useEffect(() => {
+    if (allWeeks.length  > 0 && selWeek  === null) setSelWeek(defaultWeek);
+    if (allMonths.length > 0 && selMonth === null) setSelMonth(defaultMonth);
+  }, [allWeeks, allMonths]);
+
+  const activeWeek  = selWeek  || curWeekKey;
+  const activeMonth = selMonth || curMonthYM;
+
+  const navigateWeek = (dir) => {
+    const idx = allWeeks.indexOf(activeWeek);
+    const next = idx + dir; // +1 = older, -1 = newer
+    if (next >= 0 && next < allWeeks.length) setSelWeek(allWeeks[next]);
+  };
+  const navigateMonth = (dir) => {
+    const idx = allMonths.indexOf(activeMonth);
+    const next = idx + dir;
+    if (next >= 0 && next < allMonths.length) setSelMonth(allMonths[next]);
+  };
+
+  // Compute end of week (Sun) from Mon start
+  const weekEnd = useMemo(() => {
+    const d = new Date(activeWeek + 'T00:00:00');
+    d.setDate(d.getDate() + 6);
+    return toYMD(d);
+  }, [activeWeek]);
+
+  const filtered = useMemo(() => {
+    if (mode === 'week') {
+      // Mon-Sun week, EXCLUDING Fri & Sat
+      return sales.filter(s =>
+        s.date >= activeWeek && s.date <= weekEnd && isWeeklyRankingDay(s.date)
+      );
+    } else {
+      // Month: include all days
+      return sales.filter(s => s.date.startsWith(activeMonth));
+    }
+  }, [sales, mode, activeWeek, weekEnd, activeMonth]);
+
+  const ranking = useMemo(() => rankBySales(filtered), [filtered]);
+  const totalSales = ranking.reduce((a,r) => a+r.total, 0);
+
+  // Determine period info for labels / projection
+  const isCurrentMonth = activeMonth === curMonthYM;
+  const periodDate = new Date(activeMonth + '-01');
+  const daysInMonth = new Date(periodDate.getFullYear(), periodDate.getMonth()+1, 0).getDate();
+  const dayOfMonth  = isCurrentMonth ? now.getDate() : daysInMonth;
+  const projection  = mode === 'month' && totalSales > 0 && isCurrentMonth
+    ? Math.round(totalSales / dayOfMonth * daysInMonth) : null;
+
+  const heroPlayer   = ranking[0];
+  const silverPlayer = ranking[1];
+  const bronzePlayer = ranking[2];
+
+  // Format period label
+  const fmtMD = (ymd) => { const [,m,d] = ymd.split('-'); return `${parseInt(m)}/${parseInt(d)}`; };
+  const periodLabel = mode === 'week'
+    ? `${fmtMD(activeWeek)} ─ ${fmtMD(weekEnd)} · 平日週ベース`
+    : `${activeMonth.replace('-','.')} · ${dayOfMonth}/${daysInMonth}日`;
+
+  const canNavNewer = mode === 'week' ? allWeeks.indexOf(activeWeek) > 0 : allMonths.indexOf(activeMonth) > 0;
+  const canNavOlder = mode === 'week'
+    ? allWeeks.indexOf(activeWeek) < allWeeks.length-1
+    : allMonths.indexOf(activeMonth) < allMonths.length-1;
+
+  return (
+    <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
+      <PageHeader dark={dark} title="ランキング" sub={periodLabel}
+        right={
+          <div style={{ display:'flex', gap:4 }}>
+            {[{ico:I.chevL,fn:()=>mode==='week'?navigateWeek(1):navigateMonth(1),dis:!canNavOlder},
+              {ico:I.chev, fn:()=>mode==='week'?navigateWeek(-1):navigateMonth(-1),dis:!canNavNewer}].map(({ico,fn,dis},i)=>(
+              <div key={i} onClick={dis?null:fn} style={{
+                width:26, height:26, borderRadius:'50%', cursor:dis?'default':'pointer',
+                background:dark?W.sumi2:'#FFFCF5',
+                border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                color:dis?(dark?W.boneMute:W.inkMute):(dark?W.bone:W.ink),
+                opacity:dis?0.35:1,
+              }}>{ico}</div>
+            ))}
+          </div>
+        }
+      />
+
+      {/* Mode tabs */}
+      <div style={{ padding:'0 16px 12px' }}>
+        <div style={{
+          display:'flex', gap:4, background:dark?W.sumi2:'#FFFCF5',
+          border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:10, padding:3,
+        }}>
+          {[['week','週'],['month','月間']].map(([m,t]) => (
+            <div key={m} onClick={() => setMode(m)} style={{
+              flex:1, padding:'7px 0', textAlign:'center', cursor:'pointer',
+              background:mode===m?(dark?W.crimson:W.ink):'transparent',
+              color:mode===m?W.goldL:(dark?W.bone:W.ink),
+              borderRadius:8, fontSize:12, fontWeight:600, letterSpacing:1,
+            }}>{t}</div>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:8 }}>
+          {[1,2,3,4,5].map(i => <Skeleton key={i} dark={dark} h={64} br={14}/>)}
+        </div>
+      ) : ranking.length === 0 ? (
+        <div style={{ padding:'40px 20px', textAlign:'center', color:dark?W.boneMute:W.inkMute, fontFamily:FSERIF, fontSize:15 }}>
+          データがありません
+        </div>
+      ) : (
+        <>
+          {/* AI / linear projection card */}
+          {projection && (
+            <div style={{
+              margin:'0 16px 12px',
+              background:dark?`linear-gradient(160deg,${W.sumi2},${W.sumi})`: `linear-gradient(160deg,#FFFCF5,#F8F2E2)`,
+              border:`0.5px solid ${W.gold}40`, borderRadius:16, padding:14,
+            }}>
+              <div style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:999, background:dark?W.crimsonD:'#FFF1D4', color:W.gold, fontSize:9, fontWeight:700, letterSpacing:2 }}>
+                <span style={{ display:'flex' }}>{I.sparkle}</span> 月末着地予測
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:9, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute }}>チーム合計予測</div>
+                  <div style={{ fontFamily:FSERIF, fontSize:24, fontWeight:600, color:dark?W.bone:W.ink, marginTop:2 }}>{yen(projection)}</div>
+                  <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, marginTop:2 }}>
+                    現在 <span style={{ fontFamily:FMONO, fontWeight:600, color:dark?W.bone:W.ink }}>{yen(totalSales)}</span>
+                    <span style={{ color:W.gold }}> → +{yen(projection-totalSales)}</span>
+                  </div>
+                </div>
+                <div style={{
+                  width:72, height:72, position:'relative',
+                }}>
+                  <svg width="72" height="72" viewBox="0 0 72 72">
+                    <circle cx="36" cy="36" r="30" fill="none" stroke={dark?W.sumi3:W.paper2} strokeWidth="5"/>
+                    <circle cx="36" cy="36" r="30" fill="none" stroke={W.gold} strokeWidth="5" strokeLinecap="round"
+                      strokeDasharray={`${188.5 * Math.min(totalSales/projection,1)} 188.5`}
+                      transform="rotate(-90 36 36)"
+                      style={{ filter:`drop-shadow(0 0 3px ${W.gold}80)` }}/>
+                  </svg>
+                  <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                    <div style={{ fontFamily:FSERIF, fontSize:16, fontWeight:600, color:dark?W.bone:W.ink, lineHeight:1 }}>
+                      {Math.round(totalSales/projection*100)}<span style={{ fontSize:10 }}>%</span>
+                    </div>
+                    <div style={{ fontSize:7, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute, marginTop:2 }}>進捗</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hero #1 */}
+          {heroPlayer && (
+            <div style={{
+              margin:'0 16px 16px', borderRadius:18, padding:'22px 18px 18px',
+              background:dark?`radial-gradient(ellipse at 50% 0%, ${W.crimsonD} 0%, ${W.sumi2} 70%)`: `radial-gradient(ellipse at 50% 0%, #FFF1D4 0%, #FFFCF5 75%)`,
+              border:`1px solid ${W.gold}55`,
+              boxShadow:dark?`0 0 0 1px ${W.gold}30, 0 12px 32px rgba(0,0,0,0.5)`:`0 0 0 1px ${W.gold}30, 0 8px 24px rgba(122,27,38,0.10)`,
+              position:'relative', overflow:'hidden',
+            }}>
+              <div style={{ position:'absolute', inset:0, pointerEvents:'none', overflow:'hidden' }}>
+                {[[10,20,W.gold],[40,5,W.crimsonL],[70,15,W.goldL],[88,32,W.gold]].map(([x,y,c],i)=>(
+                  <div key={i} style={{ position:'absolute', left:`${x}%`, top:`${y}%`, width:3, height:8, background:c, borderRadius:1, opacity:0.7, transform:`rotate(${i*25}deg)` }}/>
+                ))}
+              </div>
+              <div style={{ textAlign:'center', position:'relative', zIndex:1 }}>
+                <div style={{ display:'inline-flex', alignItems:'center', gap:8, color:W.gold }}>
+                  <div style={{ width:24, height:1, background:W.gold }}/>
+                  <div style={{ fontFamily:FSERIF, fontSize:10, fontWeight:600, letterSpacing:6 }}>第一位</div>
+                  <div style={{ width:24, height:1, background:W.gold }}/>
+                </div>
+                <div style={{
+                  width:70, height:70, borderRadius:'50%', margin:'10px auto 8px',
+                  background:`conic-gradient(from 0deg,${W.gold},${W.goldL},${W.gold},${W.crimson},${W.gold})`,
+                  padding:2, boxShadow:`0 0 20px ${W.gold}70`,
+                }}>
+                  <div style={{
+                    width:'100%', height:'100%', borderRadius:'50%',
+                    background:`linear-gradient(135deg,${W.crimson},${W.crimsonD})`,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontFamily:FSERIF, fontSize:30, fontWeight:600, color:W.goldL,
+                  }}>{heroPlayer.player[0]}</div>
+                </div>
+                <div style={{ fontFamily:FSERIF, fontSize:20, fontWeight:600, color:dark?W.bone:W.ink }}>{heroPlayer.player}</div>
+                <div style={{ fontFamily:FSERIF, fontSize:30, fontWeight:600, color:W.gold, textShadow:`0 0 16px ${W.gold}60`, marginTop:6 }}>
+                  {yen(heroPlayer.total)}
+                </div>
+                {ranking.length > 1 && (
+                  <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute, marginTop:2 }}>
+                    2位との差 <span style={{ fontFamily:FMONO, color:W.gold, fontWeight:600 }}>+{yen(heroPlayer.total - ranking[1].total)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 2nd & 3rd podiums */}
+          {(silverPlayer || bronzePlayer) && (
+            <div style={{ padding:'0 16px 12px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[silverPlayer, bronzePlayer].map((p,i) => {
+                if (!p) return <div key={i}/>;
+                const c = i===0?'#C6C6CC':'#B87333';
+                return (
+                  <div key={i} style={{
+                    background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${c}55`,
+                    borderRadius:14, padding:'12px 10px 10px', textAlign:'center',
+                    boxShadow:`0 4px 10px ${c}20`, position:'relative',
+                  }}>
+                    <div style={{
+                      position:'absolute', top:-9, left:'50%', transform:'translateX(-50%)',
+                      width:22, height:22, borderRadius:'50%',
+                      background:`linear-gradient(135deg,${c},${c}DD)`,
+                      color:'#fff', fontFamily:FSERIF, fontSize:12, fontWeight:700,
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      boxShadow:`0 2px 6px ${c}80`,
+                    }}>{i+2}</div>
+                    <div style={{
+                      width:38, height:38, borderRadius:'50%',
+                      background:`linear-gradient(135deg,${W.crimson},${W.crimsonD})`,
+                      color:W.goldL, fontFamily:FSERIF, fontSize:18, fontWeight:600,
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      margin:'4px auto 5px',
+                    }}>{p.player[0]}</div>
+                    <div style={{ fontSize:12, fontWeight:600, color:dark?W.bone:W.ink }}>{p.player}</div>
+                    <div style={{ fontFamily:FMONO, fontSize:12, fontWeight:700, color:dark?W.bone:W.ink, marginTop:2 }}>{yen(p.total)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 4+ list */}
+          {ranking.length > 3 && (
+            <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:6 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 2px 6px' }}>
+                <div style={{ flex:1, height:0.5, background:dark?W.hairlineD:W.hairline }}/>
+                <div style={{ fontFamily:FSERIF, fontSize:10, letterSpacing:4, color:dark?W.boneMute:W.inkMute }}>四位以降</div>
+                <div style={{ flex:1, height:0.5, background:dark?W.hairlineD:W.hairline }}/>
+              </div>
+              {ranking.slice(3).map((r,i) => (
+                <div key={r.player} style={{
+                  display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
+                  background:dark?W.sumi2:'#FFFCF5',
+                  border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:12,
+                }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', border:`1px solid ${dark?W.hairlineD:W.hairline}`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:12, fontWeight:700, color:dark?W.boneMute:W.inkMute }}>{i+4}</div>
+                  <div style={{ width:32, height:32, borderRadius:'50%', background:dark?W.sumi3:W.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:14, fontWeight:600, color:dark?W.bone:W.ink }}>{r.player[0]}</div>
+                  <div style={{ flex:1, fontSize:13, fontWeight:600, color:dark?W.bone:W.ink }}>{r.player}</div>
+                  <div style={{ fontFamily:FMONO, fontSize:13, fontWeight:700, color:dark?W.bone:W.ink }}>{yen(r.total)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Screen: カレンダー ────────────────────────────────────────────────────
+function ScreenCalendar({ dark, sales, players, loading }) {
+  const now = new Date();
+  const [viewYear, setViewYear]   = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth()+1);
+  const [selectedDay, setSelectedDay] = useState(now.getDate());
+  const [filterPlayer, setFilterPlayer] = useState(null); // null = チーム全体
+
+  const changeMonth = (delta) => {
+    let y = viewYear, m = viewMonth + delta;
+    if (m < 1) { y--; m = 12; }
+    if (m > 12) { y++; m = 1; }
+    setViewYear(y); setViewMonth(m);
+    setSelectedDay(1);
+  };
+
+  const monthPrefix = `${viewYear}-${String(viewMonth).padStart(2,'0')}`;
+  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth()+1;
+
+  // Filter sales by player if selected
+  const filteredSales = useMemo(() => {
+    if (!filterPlayer) return sales;
+    return sales.filter(s => s.player === filterPlayer.name);
+  }, [sales, filterPlayer]);
+
+  // Group sales by date for this month
+  const byDate = useMemo(() => {
+    const m = {};
+    for (const s of filteredSales) {
+      if (!s.date.startsWith(monthPrefix)) continue;
+      if (!m[s.date]) m[s.date] = { total:0, stores:new Set() };
+      m[s.date].total += s.amount;
+      if (s.store) m[s.date].stores.add(s.store);
+    }
+    return m;
+  }, [filteredSales, monthPrefix]);
+
+  const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+  const firstDow    = new Date(viewYear, viewMonth-1, 1).getDay();
+
+  // Calendar cells
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selDateStr = `${monthPrefix}-${String(selectedDay).padStart(2,'0')}`;
+  const selData = byDate[selDateStr];
+  const selStoreSales = useMemo(() => {
+    const rows = filteredSales.filter(s => s.date === selDateStr);
+    const m = {};
+    for (const s of rows) { if (s.store) m[s.store] = (m[s.store]||0) + s.amount; }
+    return m;
+  }, [filteredSales, selDateStr]);
+
+  // For team view: show per-player breakdown on selected day
+  const selPlayerSales = useMemo(() => {
+    if (filterPlayer) return null;
+    const rows = sales.filter(s => s.date === selDateStr);
+    const m = {};
+    for (const s of rows) m[s.player] = (m[s.player]||0) + s.amount;
+    return Object.entries(m).map(([p,t]) => ({ player:p, total:t })).sort((a,b)=>b.total-a.total);
+  }, [sales, selDateStr, filterPlayer]);
+
+  const monthTotal = Object.values(byDate).reduce((a,v) => a+v.total, 0);
+  const workedDays = Object.keys(byDate).length;
+  const dayAvg = workedDays > 0 ? Math.round(monthTotal/workedDays) : 0;
+
+  const MONTH_NAMES = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
+
+  return (
+    <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
+      <PageHeader dark={dark}
+        title="カレンダー"
+        sub={`${viewYear} · ${MONTH_NAMES[viewMonth-1]}`}
+        right={
+          <div style={{ display:'flex', gap:4 }}>
+            {[{ico:I.chevL,fn:()=>changeMonth(-1)},{ico:I.chev,fn:()=>changeMonth(1)}].map(({ico,fn},i)=>(
+              <div key={i} onClick={fn} style={{
+                width:28, height:28, borderRadius:'50%', cursor:'pointer',
+                background:dark?W.sumi2:'#FFFCF5',
+                border:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                color:dark?W.bone:W.ink,
+              }}>{ico}</div>
+            ))}
+          </div>
+        }
+      />
+
+      {/* Player picker chips */}
+      <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
+        <div style={{ display:'flex', gap:6, padding:'0 16px', minWidth:'max-content' }}>
+          <div onClick={() => setFilterPlayer(null)} style={{
+            flexShrink:0, display:'flex', alignItems:'center', gap:6,
+            padding:!filterPlayer?'4px 12px 4px 4px':'4px 12px',
+            borderRadius:999, cursor:'pointer',
+            background:!filterPlayer?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:(dark?W.sumi2:'#FFFCF5'),
+            border:!filterPlayer?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+            color:!filterPlayer?W.goldL:(dark?W.bone:W.ink),
+            boxShadow:!filterPlayer?`0 4px 12px ${W.crimson}40`:'none',
+          }}>
+            {!filterPlayer && <div style={{ width:28, height:28, borderRadius:'50%', background:W.crimsonD, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:13, fontWeight:600, color:W.goldL, border:`1px solid ${W.gold}` }}>全</div>}
+            <div style={{ fontSize:11, fontWeight:600 }}>全体</div>
+          </div>
+          {players.map(p => {
+            const on = filterPlayer?.id === p.id;
+            return (
+              <div key={p.id} onClick={() => setFilterPlayer(p)} style={{
+                flexShrink:0, display:'flex', alignItems:'center', gap:6,
+                padding:on?'4px 12px 4px 4px':'4px',
+                borderRadius:999, cursor:'pointer',
+                background:on?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:(dark?W.sumi2:'#FFFCF5'),
+                border:on?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                color:on?W.goldL:(dark?W.bone:W.ink),
+                boxShadow:on?`0 4px 12px ${W.crimson}40`:'none',
+              }}>
+                <div style={{ width:28, height:28, borderRadius:'50%', background:on?W.crimsonD:(dark?W.sumi3:W.paper2), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:13, fontWeight:600, color:on?W.goldL:(dark?W.bone:W.ink), border:on?`1px solid ${W.gold}`:'none' }}>
+                  {p.name[0]}
+                </div>
+                {on && <div style={{ fontSize:11, fontWeight:600 }}>{p.name}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Summary KPIs */}
+      <div style={{ padding:'0 16px 10px', display:'flex', gap:6 }}>
+        {[
+          { l:filterPlayer?`${filterPlayer.name}計`:'累計', v:loading?'…':yen(monthTotal) },
+          { l:'日平均', v:loading?'…':yen(dayAvg) },
+          { l:'稼働', v:loading?'…':`${workedDays}日` },
+        ].map(kpi => (
+          <div key={kpi.l} style={{ flex:1, background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:10, padding:'8px 10px' }}>
+            <div style={{ fontSize:8, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute }}>{kpi.l}</div>
+            <div style={{ fontFamily:FSERIF, fontSize:15, fontWeight:600, color:dark?W.bone:W.ink, marginTop:1 }}>{kpi.v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Weekday header */}
+      <div style={{ padding:'0 12px 3px' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3 }}>
+          {weekdays.map((w,i)=>(
+            <div key={w} style={{ textAlign:'center', fontSize:9, fontWeight:600, letterSpacing:1, color:i===0?W.crimsonL:i===6?W.ind:(dark?W.boneMute:W.inkMute), padding:'3px 0' }}>{w}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div style={{ padding:'0 12px' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3 }}>
+          {cells.map((d,i) => {
+            if (!d) return <div key={i}/>;
+            const dStr = `${monthPrefix}-${String(d).padStart(2,'0')}`;
+            const dData = byDate[dStr];
+            const isToday = isCurrentMonth && d === now.getDate();
+            const isSel = d === selectedDay;
+            const isFuture = isCurrentMonth && d > now.getDate();
+            const dow = (firstDow + d - 1) % 7;
+            return (
+              <div key={d} onClick={() => setSelectedDay(d)} style={{
+                aspectRatio:'1/1.15', borderRadius:9, cursor:'pointer',
+                background:isSel?(dark?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:`linear-gradient(135deg,${W.ink},${W.ink2})`)
+                  :isFuture?'transparent':(dark?W.sumi2:'#FFFCF5'),
+                border:isFuture?`0.5px dashed ${dark?W.hairlineD:W.hairline}`:isSel?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                padding:'3px 4px 2px', display:'flex', flexDirection:'column',
+                boxShadow:isSel?`0 3px 10px ${dark?W.crimson:W.ink}50`:'none',
+              }}>
+                <div style={{ fontFamily:FSERIF, fontSize:11, fontWeight:600, color:isSel?W.goldL:isFuture?(dark?W.boneMute:W.inkMute)+'66':dow===0?W.crimsonL:(dark?W.bone:W.ink) }}>{d}</div>
+                {!isFuture && dData && (
+                  <>
+                    <div style={{ fontFamily:FMONO, fontSize:7.5, fontWeight:700, color:isSel?W.goldL:(dark?W.bone:W.ink), marginTop:'auto', lineHeight:1 }}>{yenK(dData.total)}</div>
+                    <div style={{ display:'flex', gap:1.5, marginTop:2 }}>
+                      {[...dData.stores].map(sid => {
+                        const s = STORES.find(x=>x.id===sid);
+                        return s ? <div key={sid} style={{ width:3.5, height:3.5, borderRadius:'50%', background:s.color }}/> : null;
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Selected day detail */}
+      <div style={{ padding:'12px 16px 0' }}>
+        <Card dark={dark} pad={12}>
+          <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8 }}>
+            <div style={{ fontFamily:FSERIF, fontSize:20, fontWeight:600, color:dark?W.bone:W.ink }}>{viewMonth}/{selectedDay}</div>
+            <div style={{ fontSize:9, color:dark?W.boneMute:W.inkMute, letterSpacing:1 }}>
+              {weekdays[new Date(viewYear, viewMonth-1, selectedDay).getDay()]}曜日
+              {isCurrentMonth && selectedDay === now.getDate() && ' · 今日'}
+            </div>
+            <div style={{ flex:1 }}/>
+            {selData ? (
+              <div style={{ fontFamily:FMONO, fontSize:16, fontWeight:700, color:W.gold }}>{yen(selData.total)}</div>
+            ) : (
+              <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>データなし</div>
+            )}
+          </div>
+          {/* Team view: show per-player breakdown when no filter */}
+          {!filterPlayer && selData && selPlayerSales && selPlayerSales.length > 0 && (
+            <>
+              <div style={{ fontSize:9, letterSpacing:2, color:dark?W.boneMute:W.inkMute, marginTop:2, marginBottom:6 }}>スタッフ別</div>
+              {selPlayerSales.map(({player,total}) => {
+                const pct = selData.total > 0 ? total/selData.total*100 : 0;
+                return (
+                  <div key={player} style={{ display:'flex', alignItems:'center', gap:8, padding:'3px 0' }}>
+                    <div style={{ width:22, height:22, borderRadius:'50%', background:dark?W.sumi3:W.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:11, fontWeight:600, color:dark?W.bone:W.ink, flexShrink:0 }}>{player[0]}</div>
+                    <div style={{ fontFamily:FSERIF, fontSize:12, fontWeight:500, width:60, color:dark?W.bone:W.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{player}</div>
+                    <div style={{ flex:1, height:5, borderRadius:3, background:dark?W.sumi3:W.paper2, overflow:'hidden' }}>
+                      <div style={{ width:`${pct}%`, height:'100%', background:`linear-gradient(90deg,${W.crimson},${W.gold})`, borderRadius:3 }}/>
+                    </div>
+                    <div style={{ fontFamily:FMONO, fontSize:11, fontWeight:600, width:60, textAlign:'right', color:dark?W.bone:W.ink }}>{yen(total)}</div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {/* Player-filtered view: show store breakdown */}
+          {filterPlayer && selData && Object.keys(selStoreSales).length > 0 && (
+            STORES.map(s => {
+              const v = selStoreSales[s.id] || 0;
+              const pct = selData.total > 0 ? v/selData.total*100 : 0;
+              return (
+                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
+                  <div style={{ width:6, height:6, borderRadius:'50%', background:s.color, flexShrink:0 }}/>
+                  <div style={{ fontFamily:FSERIF, fontSize:12, fontWeight:600, width:28, color:dark?W.bone:W.ink }}>{s.name}</div>
+                  <div style={{ flex:1, height:5, borderRadius:3, background:dark?W.sumi3:W.paper2, overflow:'hidden' }}>
+                    <div style={{ width:`${pct}%`, height:'100%', background:s.color, borderRadius:3 }}/>
+                  </div>
+                  <div style={{ fontFamily:FMONO, fontSize:11, fontWeight:600, width:58, textAlign:'right', color:v?(dark?W.bone:W.ink):(dark?W.boneMute:W.inkMute) }}>{v?yen(v):'―'}</div>
+                </div>
+              );
+            })
+          )}
+          {filterPlayer && selData && Object.keys(selStoreSales).length === 0 && (
+            <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>店舗別データなし（合計のみ）</div>
+          )}
+          {!selData && (
+            <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>この日の売上記録はありません</div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Screen: 個人別 ─────────────────────────────────────────────────────────
+function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
+  const [mePlayer, setMePlayer] = useState(null);
+  useEffect(() => { if (currentPlayer && !mePlayer) setMePlayer(currentPlayer); }, [currentPlayer]);
+
+  // Determine which month to display: current month if it has data for this player, otherwise most recent
+  const now = new Date();
+  const curMonthPrefix = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthPrefix = useMemo(() => {
+    if (!mePlayer) return curMonthPrefix;
+    const has = sales.some(s => s.player === mePlayer.name && s.date.startsWith(curMonthPrefix));
+    if (has) return curMonthPrefix;
+    // Fall back to most recent month with data
+    const months = [...new Set(sales.filter(s => s.player === mePlayer.name).map(s => s.date.slice(0,7)))].sort().reverse();
+    return months[0] || curMonthPrefix;
+  }, [sales, mePlayer, curMonthPrefix]);
+
+  const isCurMonth = monthPrefix === curMonthPrefix;
+  const periodDate = new Date(monthPrefix + '-01');
+  const dayOfMonth  = isCurMonth ? now.getDate() : new Date(periodDate.getFullYear(), periodDate.getMonth()+1, 0).getDate();
+  const daysInMonth = new Date(periodDate.getFullYear(), periodDate.getMonth()+1, 0).getDate();
+
+  const mySales = useMemo(() => {
+    if (!mePlayer) return [];
+    return sales.filter(s => s.player === mePlayer.name && s.date.startsWith(monthPrefix));
+  }, [sales, mePlayer, monthPrefix]);
+
+  const monthly = mySales.reduce((a,s) => a+s.amount, 0);
+  const goal    = mePlayer?.monthly_goal || 0;
+  const pct     = goal > 0 ? Math.min(monthly/goal*100,100) : 0;
+  const projected = dayOfMonth > 0 && monthly > 0 ? Math.round(monthly/dayOfMonth*daysInMonth) : 0;
+
+  // Rank
+  const allMonthRank = useMemo(() => {
+    const m = {};
+    for (const s of sales) {
+      if (!s.date.startsWith(monthPrefix)) continue;
+      m[s.player] = (m[s.player]||0) + s.amount;
+    }
+    const sorted = Object.entries(m).sort((a,b)=>b[1]-a[1]);
+    return mePlayer ? (sorted.findIndex(([p])=>p===mePlayer.name)+1) : 0;
+  }, [sales, mePlayer, monthPrefix]);
+
+  // Daily breakdown
+  const dailyMap = useMemo(() => {
+    const m = {};
+    for (const s of mySales) {
+      if (!m[s.date]) m[s.date] = { total:0, stores:{} };
+      m[s.date].total += s.amount;
+      if (s.store) m[s.date].stores[s.store] = (m[s.date].stores[s.store]||0) + s.amount;
+    }
+    return m;
+  }, [mySales]);
+
+  const days = useMemo(() => {
+    const arr = [];
+    const [py, pm] = monthPrefix.split('-').map(Number);
+    for (let d = dayOfMonth; d >= Math.max(1, dayOfMonth-13); d--) {
+      const dStr = `${monthPrefix}-${String(d).padStart(2,'0')}`;
+      const data = dailyMap[dStr];
+      const dow  = new Date(py, pm-1, d).getDay();
+      arr.push({ d, w:weekdays[dow], data, today: isCurMonth && d===now.getDate(), dateStr:dStr });
+    }
+    return arr;
+  }, [dailyMap, dayOfMonth, monthPrefix, isCurMonth, now]);
+
+  return (
+    <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
+      <PageHeader dark={dark} title="個人別売上" sub={`PERSONAL · ${monthPrefix.replace('-','.')}${isCurMonth?'':' (最新)'}`}/>
+
+      {/* Staff horizontal scroll */}
+      <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
+        <div style={{ display:'flex', gap:6, padding:'0 16px', minWidth:'max-content' }}>
+          {players.map(p => {
+            const on = mePlayer?.id === p.id;
+            return (
+              <div key={p.id} onClick={() => setMePlayer(p)} style={{
+                flexShrink:0, display:'flex', alignItems:'center', gap:6,
+                padding:on?'4px 12px 4px 4px':'4px',
+                borderRadius:999, cursor:'pointer',
+                background:on?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:(dark?W.sumi2:'#FFFCF5'),
+                border:on?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                color:on?W.goldL:(dark?W.bone:W.ink),
+                boxShadow:on?`0 4px 12px ${W.crimson}40`:'none',
+              }}>
+                <div style={{ width:28, height:28, borderRadius:'50%', background:on?W.crimsonD:(dark?W.sumi3:W.paper2), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:13, fontWeight:600, color:on?W.goldL:(dark?W.bone:W.ink), border:on?`1px solid ${W.gold}`:'none' }}>
+                  {p.name[0]}
+                </div>
+                {on && <div style={{ fontSize:11, fontWeight:600 }}>{p.name.split(' ')[1]||p.name}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {!mePlayer ? (
+        <div style={{ padding:'40px 20px', textAlign:'center', color:dark?W.boneMute:W.inkMute, fontFamily:FSERIF, fontSize:14 }}>スタッフを選択してください</div>
+      ) : (
+        <>
+          {/* Hero card */}
+          <div style={{ padding:'0 16px 12px' }}>
+            <div style={{
+              background:dark?`linear-gradient(160deg,${W.sumi2},${W.sumi})`:`linear-gradient(160deg,#FFFCF5,${W.paper})`,
+              border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:16, padding:16, position:'relative', overflow:'hidden',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ width:54, height:54, borderRadius:'50%', background:`conic-gradient(from 0deg,${W.gold},${W.crimson},${W.gold})`, padding:2, boxShadow:`0 0 14px ${W.gold}40` }}>
+                  <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:`linear-gradient(135deg,${W.crimson},${W.crimsonD})`, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:24, fontWeight:600, color:W.goldL }}>
+                    {mePlayer.name[0]}
+                  </div>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FSERIF, fontSize:18, fontWeight:600, color:dark?W.bone:W.ink }}>{mePlayer.name}</div>
+                  <div style={{ fontSize:9, color:dark?W.boneMute:W.inkMute, fontFamily:FMONO, letterSpacing:1.5, marginTop:1 }}>
+                    STAFF · {monthPrefix.replace('-','.')}
+                  </div>
+                  {allMonthRank > 0 && (
+                    <div style={{ display:'inline-flex', alignItems:'center', gap:3, marginTop:5, padding:'2px 7px', borderRadius:999, background:W.gold+'22', color:W.gold, fontSize:9, fontWeight:700, letterSpacing:1 }}>
+                      <span>{I.crown}</span> 月間 {allMonthRank}位
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {goal > 0 && (
+                <div style={{ marginTop:14 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, letterSpacing:1, marginBottom:4, color:dark?W.boneMute:W.inkMute }}>
+                    <span>月目標</span>
+                    <span style={{ fontFamily:FMONO, color:dark?W.bone:W.ink, fontWeight:600 }}>{yen(monthly)} / {yen(goal)}</span>
+                  </div>
+                  <div style={{ height:10, borderRadius:5, background:dark?W.sumi3:W.paper2, position:'relative', overflow:'hidden', boxShadow:'inset 0 1px 2px rgba(0,0,0,0.15)' }}>
+                    <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${pct}%`, background:`linear-gradient(90deg,${W.crimson},${W.gold})`, borderRadius:5, boxShadow:`0 0 10px ${W.gold}70` }}/>
+                    {goal > 0 && projected > 0 && projected > monthly && (
+                      <div style={{ position:'absolute', left:`${pct}%`, top:0, bottom:0, width:`${Math.min((projected-monthly)/goal*100, 100-pct)}%`, background:`repeating-linear-gradient(45deg,${W.gold}55,${W.gold}55 3px,transparent 3px,transparent 6px)` }}/>
+                    )}
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:4, alignItems:'baseline' }}>
+                    <div>
+                      <span style={{ fontFamily:FSERIF, fontSize:20, fontWeight:700, color:W.gold }}>{Math.round(pct)}</span>
+                      <span style={{ fontSize:10, color:dark?W.boneMute:W.inkMute }}>% 達成</span>
+                    </div>
+                    <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute }}>
+                      残 <span style={{ fontFamily:FMONO, color:dark?W.bone:W.ink, fontWeight:600 }}>{yen(Math.max(goal-monthly,0))}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display:'flex', marginTop:12, paddingTop:10, borderTop:`0.5px solid ${dark?W.hairlineD:W.hairline}` }}>
+                {[
+                  { l:'月計', v:yenK(monthly) },
+                  { l:'予測', v:projected?yenK(projected):'―', c:W.gold },
+                  { l:'稼働', v:`${Object.keys(dailyMap).length}日` },
+                ].map((s,i) => (
+                  <div key={s.l} style={{ flex:1, textAlign:'center', borderRight:i<2?`0.5px solid ${dark?W.hairlineD:W.hairline}`:'none' }}>
+                    <div style={{ fontSize:8, letterSpacing:1.5, color:dark?W.boneMute:W.inkMute }}>{s.l}</div>
+                    <div style={{ fontFamily:FMONO, fontSize:13, fontWeight:700, color:s.c||(dark?W.bone:W.ink), marginTop:2 }}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Daily rows */}
+          <div style={{ padding:'0 16px 6px', display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+            <div style={{ fontFamily:FSERIF, fontSize:12, fontWeight:600, color:dark?W.bone:W.ink, letterSpacing:3 }}>日次内訳</div>
+            <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute }}>当月分</div>
+          </div>
+          <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:5 }}>
+            {days.map(day => (
+              <div key={day.d} style={{
+                display:'flex', alignItems:'center', gap:10, padding:'9px 12px',
+                background:day.today?(dark?W.crimsonD+'40':'#FFF6E8'):(dark?W.sumi2:'#FFFCF5'),
+                border:day.today?`0.5px solid ${W.gold}55`:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                borderRadius:11,
+              }}>
+                <div style={{ width:32, textAlign:'center' }}>
+                  <div style={{ fontFamily:FSERIF, fontSize:16, fontWeight:600, color:dark?W.bone:W.ink, lineHeight:1 }}>{day.d}</div>
+                  <div style={{ fontSize:8, color:dark?W.boneMute:W.inkMute, marginTop:1 }}>{day.w}</div>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  {day.data && day.data.total > 0 ? (
+                    <>
+                      <div style={{ display:'flex', gap:2, height:5, borderRadius:3, overflow:'hidden', background:dark?W.sumi3:W.paper2 }}>
+                        {STORES.map(s => {
+                          const v = day.data.stores[s.id]||0;
+                          const w = day.data.total>0 ? v/day.data.total*100 : 0;
+                          return w > 0 ? <div key={s.id} style={{ width:`${w}%`, background:s.color }}/> : null;
+                        })}
+                        {Object.keys(day.data.stores).length === 0 && (
+                          <div style={{ width:'100%', background:`linear-gradient(90deg,${W.crimson},${W.crimsonL})` }}/>
+                        )}
+                      </div>
+                      <div style={{ display:'flex', gap:6, marginTop:3 }}>
+                        {Object.keys(day.data.stores).length > 0 ? (
+                          STORES.map(s => {
+                            const v = day.data.stores[s.id]||0;
+                            return v > 0 ? (
+                              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:2, fontSize:8, fontFamily:FMONO, color:dark?W.boneMute:W.inkMute }}>
+                                <div style={{ width:3, height:3, borderRadius:'50%', background:s.color }}/>
+                                {yenK(v)}
+                              </div>
+                            ) : null;
+                          })
+                        ) : (
+                          <div style={{ fontSize:8, fontFamily:FMONO, color:dark?W.boneMute:W.inkMute }}>合計</div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>―</div>
+                  )}
+                </div>
+                <div style={{ fontFamily:FMONO, fontSize:13, fontWeight:700, color:day.today?W.gold:(dark?W.bone:W.ink) }}>
+                  {day.data && day.data.total > 0 ? yen(day.data.total) : '―'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Screen: 設定 ───────────────────────────────────────────────────────────
+function ScreenSettings({ dark, setDark, players, onRefresh }) {
+  const [goalEdit, setGoalEdit] = useState(null);
+  const [goalVal, setGoalVal]   = useState('');
+  const [saving, setSaving]     = useState(false);
+
+  const handleSaveGoal = async (player) => {
+    if (!goalVal) return;
+    setSaving(true);
+    const val = Number(goalVal.replace(/,/g,''));
+    await db.from('players').update({ monthly_goal: val }).eq('id', player.id);
+    setSaving(false);
+    setGoalEdit(null);
+    onRefresh();
+  };
+
+  const Toggle = ({ on, onToggle }) => (
+    <div onClick={onToggle} style={{ width:42, height:24, borderRadius:999, background:on?W.crimson:(dark?W.sumi3:W.paper2), position:'relative', cursor:'pointer', transition:'0.2s', boxShadow:on?`0 0 10px ${W.crimson}40`:'none' }}>
+      <div style={{ width:20, height:20, borderRadius:'50%', background:on?W.goldL:'#fff', position:'absolute', top:2, left:on?20:2, transition:'0.2s', boxShadow:'0 2px 4px rgba(0,0,0,0.2)' }}/>
+    </div>
+  );
+
+  return (
+    <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
+      <PageHeader dark={dark} title="設定" sub="SETTINGS"/>
+
+      {/* App info header */}
+      <div style={{ padding:'0 16px 14px' }}>
+        <div style={{
+          background:dark?`linear-gradient(135deg,${W.crimsonD},${W.sumi2})`:`linear-gradient(135deg,${W.ink},${W.ink2})`,
+          borderRadius:14, padding:'12px 14px', display:'flex', alignItems:'center', gap:12,
+          border:`0.5px solid ${W.gold}40`,
+        }}>
+          <div style={{ width:44, height:44, borderRadius:'50%', background:`conic-gradient(from 0deg,${W.gold},${W.goldL},${W.gold})`, padding:2 }}>
+            <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:W.crimsonD, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FSERIF, fontSize:20, fontWeight:600, color:W.goldL }}>売</div>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:FSERIF, fontSize:14, fontWeight:600, color:W.bone }}>キャッチ売上ランキング</div>
+            <div style={{ fontSize:10, color:W.boneMute, fontFamily:FMONO, letterSpacing:1, marginTop:2 }}>
+              v2.0 · {players.length} STAFF · 4 STORES
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Display */}
+      <SectionGroup title="表示" dark={dark}>
+        <SettingRow dark={dark}
+          icon={<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5"/><path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1"/></svg>}
+          label="ダークモード"
+          sub={dark?'夜の和 · 漆黒':'昼の和 · 和紙'}
+          right={<Toggle on={dark} onToggle={() => { const d = !dark; setDark(d); localStorage.setItem('dark', d?'1':'0'); }}/>}
+        />
+      </SectionGroup>
+
+      {/* Monthly goals per staff */}
+      <SectionGroup title="月目標" dark={dark}>
+        {players.map((p, i) => (
+          <React.Fragment key={p.id}>
+            {i > 0 && <div style={{ height:0.5, background:dark?W.hairlineD:W.hairline, marginLeft:46 }}/>}
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px' }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${W.crimson},${W.crimsonD})`, color:W.goldL, fontFamily:FSERIF, fontSize:14, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                {p.name[0]}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:500, color:dark?W.bone:W.ink }}>{p.name}</div>
+                {goalEdit === p.id ? (
+                  <input
+                    autoFocus value={goalVal} onChange={e => setGoalVal(e.target.value)}
+                    onBlur={() => { if (goalVal) handleSaveGoal(p); else setGoalEdit(null); }}
+                    onKeyDown={e => e.key==='Enter' && handleSaveGoal(p)}
+                    style={{
+                      fontSize:12, fontFamily:FMONO, fontWeight:600, color:W.gold,
+                      background:'transparent', borderBottom:`1px solid ${W.gold}`,
+                      padding:'2px 0', width:100, marginTop:2,
+                    }}
+                    placeholder="例: 800000"
+                  />
+                ) : (
+                  <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute, marginTop:1 }}>
+                    目標: {p.monthly_goal ? yen(p.monthly_goal) : '未設定'}
+                  </div>
+                )}
+              </div>
+              <div onClick={() => { setGoalEdit(p.id); setGoalVal(p.monthly_goal?String(p.monthly_goal):''); }}
+                style={{ fontSize:10, color:W.gold, fontFamily:FMONO, cursor:'pointer', padding:'4px 8px' }}>
+                編集
+              </div>
+            </div>
+          </React.Fragment>
+        ))}
+      </SectionGroup>
+
+      {/* Data */}
+      <SectionGroup title="データ" dark={dark}>
+        <SettingRow dark={dark}
+          icon={<span style={{ fontFamily:FMONO }}>↓</span>}
+          label="CSV書き出し"
+          right={<span style={{ color:dark?W.boneMute:W.inkMute }}>{I.chev}</span>}
+          onPress={async () => {
+            const { data } = await db.from('sales').select('*').order('date', { ascending: true });
+            if (!data) return;
+            const csv = ['date,player,store,amount,half_month_start',
+              ...data.map(r => `${r.date},${r.player},${r.store||''},${r.amount},${r.half_month_start||''}`)
+            ].join('\n');
+            const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `catch-sales-${new Date().toISOString().slice(0,10)}.csv`;
+            a.click(); URL.revokeObjectURL(url);
+          }}
+        />
+      </SectionGroup>
+
+      <div style={{ textAlign:'center', padding:'8px 0 16px', fontFamily:FMONO, fontSize:9, letterSpacing:2, color:dark?W.boneMute:W.inkMute }}>
+        キャッチ売上 · v2.0 · Supabase
+      </div>
+    </div>
+  );
+}
+
+function SectionGroup({ title, dark, children }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ padding:'0 16px 5px', fontFamily:FSERIF, fontSize:10, letterSpacing:4, fontWeight:600, color:dark?W.boneMute:W.inkMute }}>{title}</div>
+      <div style={{ margin:'0 12px', background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:12, overflow:'hidden' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SettingRow({ dark, icon, label, sub, right, accent, onPress }) {
+  return (
+    <div onClick={onPress} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', cursor:onPress?'pointer':'default' }}>
+      <div style={{ width:30, height:30, borderRadius:7, background:accent||(dark?W.sumi3:W.paper2), display:'flex', alignItems:'center', justifyContent:'center', color:accent?W.goldL:(dark?W.bone:W.ink), flexShrink:0 }}>{icon}</div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:500, color:dark?W.bone:W.ink }}>{label}</div>
+        {sub && <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, marginTop:1 }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+// ── App Root ───────────────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab]                   = useState(() => localStorage.getItem('lastTab') || 'rank');
+  const [dark, setDark]                 = useState(() => {
+    const stored = localStorage.getItem('dark');
+    if (stored !== null) return stored === '1';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const [players, setPlayers]           = useState([]);
+  const [sales, setSales]               = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [currentPlayer, setCurrentPlayer] = useState(() => {
+    const stored = localStorage.getItem('currentPlayer');
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const loadData = useCallback(async () => {
+    // Load all sales data (we only have ~500 rows total, no date filter needed)
+    const [{ data:pl }, { data:sl }] = await Promise.all([
+      db.from('players').select('*').eq('active', true).order('name'),
+      db.from('sales').select('*').order('date', { ascending: false }).limit(5000),
+    ]);
+    if (pl) setPlayers(pl);
+    if (sl) setSales(sl);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Keep currentPlayer synced with players list (in case goal changed)
+  // Auto-select first player if none selected
+  useEffect(() => {
+    if (players.length === 0) return;
+    if (currentPlayer) {
+      const fresh = players.find(p => p.id === currentPlayer.id);
+      if (fresh) {
+        setCurrentPlayer(fresh);
+        localStorage.setItem('currentPlayer', JSON.stringify(fresh));
+      }
+    } else {
+      // Default to first player
+      setCurrentPlayer(players[0]);
+      localStorage.setItem('currentPlayer', JSON.stringify(players[0]));
+    }
+  }, [players]);
+
+  // Persist last tab
+  const handleSetTab = (t) => {
+    setTab(t);
+    localStorage.setItem('lastTab', t);
+  };
+
+  const handleSelectPlayer = (p) => {
+    setCurrentPlayer(p);
+    localStorage.setItem('currentPlayer', JSON.stringify(p));
+  };
+
+  const color = dark ? W.bone : W.ink;
+
+  return (
+    <div className={dark?'mesh-dark':'mesh-light'} style={{ width:'100%', height:'100%', color, fontFamily:FSANS, position:'relative', overflow:'hidden' }}>
+      {/* Status bar safe area */}
+      <div style={{ height:'env(safe-area-inset-top,44px)' }}/>
+
+      {/* Screen area */}
+      <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
+        {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
+        {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading}/>}
+        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
+        {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
+        {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} onRefresh={loadData}/>}
+        <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
+      </div>
+
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+      `}</style>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
