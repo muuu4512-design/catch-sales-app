@@ -226,7 +226,7 @@ function BottomNav({ active, dark, onNav }) {
     { id:'rec',  label:'記録',       icon:I.edit },
     { id:'rank', label:'ランキング', icon:I.trophy },
     { id:'cal',  label:'カレンダー', icon:I.cal },
-    { id:'me',   label:'個人',       icon:I.user },
+    { id:'me',   label:'売上',       icon:I.user },
     { id:'set',  label:'設定',       icon:I.gear },
   ];
   return (
@@ -1176,9 +1176,18 @@ function ScreenCalendar({ dark, sales, players, loading }) {
 }
 
 // ── Screen: 個人別 ─────────────────────────────────────────────────────────
-function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
+function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj }) {
   const [mePlayer, setMePlayer] = useState(null);
   useEffect(() => { if (currentPlayer && !mePlayer) setMePlayer(currentPlayer); }, [currentPlayer]);
+
+  // Sort: しょうや first, then by name
+  const sortedPlayers = useMemo(() => {
+    return [...players].sort((a,b) => {
+      if (a.name === 'しょうや') return -1;
+      if (b.name === 'しょうや') return 1;
+      return a.name.localeCompare(b.name, 'ja');
+    });
+  }, [players]);
 
   // Determine which month to display: current month if it has data for this player, otherwise most recent
   const now = new Date();
@@ -1205,7 +1214,10 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
   const monthly = mySales.reduce((a,s) => a+s.amount, 0);
   const goal    = mePlayer?.monthly_goal || 0;
   const pct     = goal > 0 ? Math.min(monthly/goal*100,100) : 0;
-  const projected = dayOfMonth > 0 && monthly > 0 ? Math.round(monthly/dayOfMonth*daysInMonth) : 0;
+  // Use AI projection if available (current month), otherwise linear
+  const aiProjected = (isCurMonth && aiProj && mePlayer) ? aiProj[mePlayer.name]?.projected_total : null;
+  const linearProjected = dayOfMonth > 0 && monthly > 0 ? Math.round(monthly/dayOfMonth*daysInMonth) : 0;
+  const projected = aiProjected || linearProjected;
 
   // Rank
   const allMonthRank = useMemo(() => {
@@ -1243,12 +1255,12 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
 
   return (
     <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
-      <PageHeader dark={dark} title="個人別売上" sub={`PERSONAL · ${monthPrefix.replace('-','.')}${isCurMonth?'':' (最新)'}`}/>
+      <PageHeader dark={dark} title="売上" sub={`SALES · ${monthPrefix.replace('-','.')}${isCurMonth?'':' (最新)'}`}/>
 
       {/* Staff horizontal scroll */}
       <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
         <div style={{ display:'flex', gap:6, padding:'0 16px', minWidth:'max-content' }}>
-          {players.map(p => {
+          {sortedPlayers.map(p => {
             const on = mePlayer?.id === p.id;
             return (
               <div key={p.id} onClick={() => setMePlayer(p)} style={{
@@ -1326,7 +1338,7 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer }) {
               <div style={{ display:'flex', marginTop:12, paddingTop:10, borderTop:`0.5px solid ${dark?W.hairlineD:W.hairline}` }}>
                 {[
                   { l:'月計', v:yenK(monthly) },
-                  { l:'予測', v:projected?yenK(projected):'―', c:W.gold },
+                  { l: aiProjected ? 'AI予測' : '予測', v:projected?yenK(projected):'―', c: aiProjected?W.crimson:W.gold },
                   { l:'稼働', v:`${Object.keys(dailyMap).length}日` },
                 ].map((s,i) => (
                   <div key={s.l} style={{ flex:1, textAlign:'center', borderRight:i<2?`0.5px solid ${dark?W.hairlineD:W.hairline}`:'none' }}>
@@ -1643,7 +1655,7 @@ function App() {
         {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
         {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal} aiProj={aiProj} aiProjLoading={aiProjLoading}/>}
         {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
-        {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer}/>}
+        {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer} aiProj={aiProj}/>}
         {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData}/>}
         <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
       </div>
