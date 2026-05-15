@@ -377,20 +377,25 @@ function Skeleton({ dark, w='100%', h=16, br=8 }) {
 }
 
 // ── Screen: 売上記録 ──────────────────────────────────────────────────────
-function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, onSaved }) {
+function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, onSaved, recordDate, setRecordDate }) {
   const today = new Date();
-  const dates = Array.from({length:5}, (_,i) => {
+  const todayStr = toYMD(today);
+  // 直近5日のクイックチップ
+  const recentDates = Array.from({length:5}, (_,i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (4-i));
     return d;
   });
-  const [selDateIdx, setSelDateIdx] = useState(4);
+  const recentDateStrs = recentDates.map(toYMD);
+  const selDateStr = recordDate || todayStr;
+  const selDate = new Date(selDateStr + 'T00:00:00');
+  const isRecentDate = recentDateStrs.includes(selDateStr);
+
   const [activeStore, setActiveStore] = useState('dosu');
   const [amounts, setAmounts] = useState({ gochi:0, dosu:0, goro:0, uo:0 });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const selDate = dates[selDateIdx];
-  const selDateStr = toYMD(selDate);
+  const dateInputRef = useRef(null);
 
   // Load existing sales for selected date+player
   useEffect(() => {
@@ -492,23 +497,57 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
         }
       />
 
-      {/* Date strip */}
+      {/* Date strip: 5-day quick chips + 📅 native picker */}
       <div style={{ padding:'0 16px 8px' }}>
-        <div style={{ display:'flex', gap:4, background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:12, padding:4 }}>
-          {dates.map((d,i) => {
-            const on = i === selDateIdx;
-            return (
-              <div key={i} onClick={() => setSelDateIdx(i)} style={{
-                flex:1, padding:'5px 0', textAlign:'center', cursor:'pointer',
-                background:on?(dark?W.crimson:W.ink):'transparent',
-                color:on?W.goldL:(dark?W.bone:W.ink), borderRadius:8,
-              }}>
-                <div style={{ fontSize:9, opacity:0.65, fontFamily:FSANS, letterSpacing:1 }}>{weekdays[d.getDay()]}</div>
-                <div style={{ fontSize:15, fontWeight:700, fontFamily:FSERIF, marginTop:1 }}>{d.getDate()}</div>
-              </div>
-            );
-          })}
+        <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
+          <div style={{ flex:1, display:'flex', gap:4, background:dark?W.sumi2:'#FFFCF5', border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:12, padding:4 }}>
+            {recentDates.map((d,i) => {
+              const dStr = toYMD(d);
+              const on = dStr === selDateStr;
+              return (
+                <div key={i} onClick={() => setRecordDate(dStr)} style={{
+                  flex:1, padding:'5px 0', textAlign:'center', cursor:'pointer',
+                  background:on?(dark?W.crimson:W.ink):'transparent',
+                  color:on?W.goldL:(dark?W.bone:W.ink), borderRadius:8,
+                }}>
+                  <div style={{ fontSize:9, opacity:0.65, fontFamily:FSANS, letterSpacing:1 }}>{weekdays[d.getDay()]}</div>
+                  <div style={{ fontSize:15, fontWeight:700, fontFamily:FSERIF, marginTop:1 }}>{d.getDate()}</div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Date picker button */}
+          <label style={{
+            display:'flex', alignItems:'center', justifyContent:'center', gap:4,
+            padding:'4px 12px', borderRadius:12, cursor:'pointer',
+            background: isRecentDate ? (dark?W.sumi2:'#FFFCF5') : `linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+            border:`0.5px solid ${isRecentDate ? (dark?W.hairlineD:W.hairline) : W.crimson}`,
+            color: isRecentDate ? (dark?W.bone:W.ink) : '#fff',
+            fontFamily:FSANS, fontSize:11, fontWeight:600,
+            position:'relative',
+          }}>
+            <input
+              ref={dateInputRef} type="date" value={selDateStr}
+              max={todayStr}
+              onChange={e => e.target.value && setRecordDate(e.target.value)}
+              style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }}
+            />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink:0 }}>
+              <rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" strokeWidth="1.6"/>
+              <path d="M8 3v4M16 3v4M3.5 10h17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            <span style={{ fontSize:10, letterSpacing:0.3 }}>{isRecentDate ? '別日' : selDateStr.slice(5).replace('-','/')}</span>
+          </label>
         </div>
+        {!isRecentDate && (
+          <div style={{ marginTop:6, padding:'6px 12px', background:`${W.crimson}15`, border:`1px solid ${W.crimson}55`, borderRadius:10, display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:11, color:W.crimson, fontWeight:600 }}>📅 {selDateStr} ({weekdays[selDate.getDay()]})</span>
+            <div style={{ flex:1 }}/>
+            <div onClick={() => setRecordDate(todayStr)} style={{ fontSize:10, color:W.crimson, fontFamily:FSANS, fontWeight:700, cursor:'pointer', padding:'3px 8px', borderRadius:999, background:dark?'rgba(255,107,138,0.15)':'rgba(255,107,138,0.10)' }}>
+              今日へ
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Total card */}
@@ -1033,7 +1072,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
 }
 
 // ── Screen: カレンダー ────────────────────────────────────────────────────
-function ScreenCalendar({ dark, sales, players, loading }) {
+function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
   const now = new Date();
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth()+1);
@@ -1235,6 +1274,23 @@ function ScreenCalendar({ dark, sales, players, loading }) {
               <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>データなし</div>
             )}
           </div>
+          {/* この日に入力ボタン */}
+          {onEditDay && (
+            <div onClick={() => onEditDay(selDateStr)} style={{
+              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              padding:'8px 12px', borderRadius:12, marginBottom:8,
+              background:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+              color:'#fff', cursor:'pointer',
+              fontFamily:FSANS, fontSize:12, fontWeight:700, letterSpacing:1,
+              boxShadow:`0 4px 12px ${W.crimson}40`,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+                <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.6"/>
+              </svg>
+              この日に入力する
+            </div>
+          )}
           {/* Team view: show per-player breakdown when no filter */}
           {!filterPlayer && selData && selPlayerSales && selPlayerSales.length > 0 && (
             <>
@@ -1687,6 +1743,7 @@ function App() {
   const [loading, setLoading]           = useState(true);
   const [aiProj, setAiProj]             = useState(null);
   const [aiProjLoading, setAiProjLoading] = useState(false);
+  const [recordDate, setRecordDate]     = useState(() => toYMD(new Date()));
   const [currentPlayer, setCurrentPlayer] = useState(() => {
     const stored = localStorage.getItem('currentPlayer');
     return stored ? JSON.parse(stored) : null;
@@ -1757,9 +1814,9 @@ function App() {
 
       {/* Screen area */}
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
-        {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData}/>}
+        {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData} recordDate={recordDate} setRecordDate={setRecordDate}/>}
         {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal} aiProj={aiProj} aiProjLoading={aiProjLoading}/>}
-        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading}/>}
+        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading} onEditDay={(d) => { setRecordDate(d); handleSetTab('rec'); }}/>}
         {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer} aiProj={aiProj}/>}
         {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData}/>}
         <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
