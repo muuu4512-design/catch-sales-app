@@ -1138,13 +1138,11 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
   const workedDays = Object.keys(byDate).length;
   const dayAvg = workedDays > 0 ? Math.round(monthTotal/workedDays) : 0;
 
-  const MONTH_NAMES = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
-
   return (
     <div style={{ height:'100%', overflow:'auto', paddingBottom:80 }}>
       <PageHeader dark={dark}
         title="カレンダー"
-        sub={`${viewYear} · ${MONTH_NAMES[viewMonth-1]}`}
+        sub={`${viewYear} · ${viewMonth}月`}
         right={
           <div style={{ display:'flex', gap:4 }}>
             {[{ico:I.chevL,fn:()=>changeMonth(-1)},{ico:I.chev,fn:()=>changeMonth(1)}].map(({ico,fn},i)=>(
