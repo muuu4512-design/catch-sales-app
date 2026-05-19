@@ -125,6 +125,18 @@ const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
 const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
 const db = window.supabase.createClient(SB_URL, SB_KEY);
 
+// ── オフ日考慮: 稼働日数カウント ────────────────────────────────────────────
+// startDateStr / endDateStr: 'YYYY-MM-DD', offDates: ['YYYY-MM-DD', ...]
+function workingDaysInRange(startDateStr, endDateStr, offDates) {
+  const offSet = new Set(offDates || []);
+  let count = 0;
+  const end = new Date(endDateStr + 'T00:00:00');
+  for (let d = new Date(startDateStr + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 1)) {
+    if (!offSet.has(toYMD(d))) count++;
+  }
+  return count;
+}
+
 // ── Local AI Predictor — per-player history + DOW pattern fallback ────────
 // 各プレイヤー自身の履歴で予測。データ不足の場合のみテンプレ(トッププレイヤー DOWパターン)で補完
 function computeDowAvg(playerName, sales, refDate) {
@@ -377,7 +389,7 @@ function Skeleton({ dark, w='100%', h=16, br=8 }) {
 }
 
 // ── Screen: 売上記録 ──────────────────────────────────────────────────────
-function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, onSaved, recordDate, setRecordDate }) {
+function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, onSaved, recordDate, setRecordDate, offDaysMap }) {
   const today = new Date();
   const todayStr = toYMD(today);
   // 直近5日のクイックチップ
@@ -419,22 +431,22 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
   const total = Object.entries(amounts).filter(([k]) => !k.startsWith('_')).reduce((a,[,v]) => a+v, 0);
   const totalAmt = amounts._total || total;
 
-  // Daily target: (goal - month_sales_excluding_today) / remaining_days_including_today
+  // Daily target: (goal - month_sales_excluding_today) / remaining_working_days_including_today
   const dailyTarget = useMemo(() => {
     if (!currentPlayer || !currentPlayer.monthly_goal) return 0;
     const ym = selDateStr.slice(0,7);
-    // Sum of this player's month sales EXCLUDING the selected day
     const otherDays = sales
       .filter(s => s.player === currentPlayer.name && s.date.startsWith(ym) && s.date !== selDateStr)
       .reduce((a,s) => a+s.amount, 0);
     const remaining = currentPlayer.monthly_goal - otherDays;
     if (remaining <= 0) return 0;
-    // Days remaining (including selected day) through end of month
     const [y,m,d] = selDateStr.split('-').map(Number);
     const lastDay = new Date(y, m, 0).getDate();
-    const daysLeft = lastDay - d + 1;
-    return daysLeft > 0 ? remaining / daysLeft : 0;
-  }, [currentPlayer, sales, selDateStr]);
+    const lastDayStr = `${ym}-${String(lastDay).padStart(2,'0')}`;
+    const playerOffDays = (offDaysMap && currentPlayer) ? (offDaysMap[currentPlayer.id] || []) : [];
+    const workingLeft = workingDaysInRange(selDateStr, lastDayStr, playerOffDays);
+    return workingLeft > 0 ? remaining / workingLeft : 0;
+  }, [currentPlayer, sales, selDateStr, offDaysMap]);
 
   const monthRemaining = useMemo(() => {
     if (!currentPlayer || !currentPlayer.monthly_goal) return 0;
@@ -448,8 +460,10 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
   const monthDaysLeft = useMemo(() => {
     const [y,m,d] = selDateStr.split('-').map(Number);
     const lastDay = new Date(y, m, 0).getDate();
-    return lastDay - d + 1;
-  }, [selDateStr]);
+    const lastDayStr = `${selDateStr.slice(0,7)}-${String(lastDay).padStart(2,'0')}`;
+    const playerOffDays = (offDaysMap && currentPlayer) ? (offDaysMap[currentPlayer.id] || []) : [];
+    return workingDaysInRange(selDateStr, lastDayStr, playerOffDays);
+  }, [selDateStr, currentPlayer, offDaysMap]);
 
   const handleKey = (k) => {
     setAmounts(prev => {
@@ -571,7 +585,7 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
                   {totalAmt >= dailyTarget ? '✓ 達成' : yen(Math.round(dailyTarget))}
                 </div>
                 <div style={{ fontSize:8.5, color:dark?W.boneMute:W.inkMute, marginTop:2, fontFamily:FMONO }}>
-                  月残 {yen(Math.max(monthRemaining,0))} / {monthDaysLeft}日
+                  月残 {yen(Math.max(monthRemaining,0))} / {monthDaysLeft}稼働日
                 </div>
               </>
             ) : (
@@ -1072,7 +1086,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
 }
 
 // ── Screen: カレンダー ────────────────────────────────────────────────────
-function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
+function ScreenCalendar({ dark, sales, players, loading, onEditDay, offDaysMap, onOffDaysChange }) {
   const now = new Date();
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth()+1);
@@ -1095,6 +1109,23 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
     if (!filterPlayer) return sales;
     return sales.filter(s => s.player === filterPlayer.name);
   }, [sales, filterPlayer]);
+
+  // オフ日操作
+  const playerOffDates = useMemo(() => {
+    if (!filterPlayer || !offDaysMap) return new Set();
+    return new Set(offDaysMap[filterPlayer.id] || []);
+  }, [filterPlayer, offDaysMap]);
+
+  const handleToggleOffDate = async (dateStr) => {
+    if (!filterPlayer) return;
+    const current = (offDaysMap && offDaysMap[filterPlayer.id]) ? offDaysMap[filterPlayer.id] : [];
+    const next = current.includes(dateStr)
+      ? current.filter(d => d !== dateStr)
+      : [...current, dateStr].sort();
+    const newMap = { ...(offDaysMap||{}), [filterPlayer.id]: next };
+    onOffDaysChange(newMap);
+    await db.from('settings').upsert({ key: 'off_days', value: JSON.stringify(newMap) }, { onConflict: 'key' });
+  };
 
   // Group sales by date for this month
   const byDate = useMemo(() => {
@@ -1229,17 +1260,23 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
             const isSel = d === selectedDay;
             const isFuture = isCurrentMonth && d > now.getDate();
             const dow = (firstDow + d - 1) % 7;
+            const isOff = filterPlayer && playerOffDates.has(dStr);
             return (
               <div key={d} onClick={() => setSelectedDay(d)} style={{
                 aspectRatio:'1/1.15', borderRadius:9, cursor:'pointer',
                 background:isSel?(dark?`linear-gradient(135deg,${W.crimson},${W.crimsonD})`:`linear-gradient(135deg,${W.ink},${W.ink2})`)
+                  :isOff?(dark?'rgba(255,107,138,0.12)':'rgba(255,107,138,0.08)')
                   :isFuture?'transparent':(dark?W.sumi2:'#FFFCF5'),
-                border:isFuture?`0.5px dashed ${dark?W.hairlineD:W.hairline}`:isSel?'none':`0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                border:isSel?'none':isOff?`0.5px solid ${W.crimson}44`:isFuture?`0.5px dashed ${dark?W.hairlineD:W.hairline}`:`0.5px solid ${dark?W.hairlineD:W.hairline}`,
                 padding:'3px 4px 2px', display:'flex', flexDirection:'column',
                 boxShadow:isSel?`0 3px 10px ${dark?W.crimson:W.ink}50`:'none',
+                opacity: isOff && !isSel ? 0.6 : 1,
               }}>
-                <div style={{ fontFamily:FSERIF, fontSize:11, fontWeight:600, color:isSel?W.goldL:isFuture?(dark?W.boneMute:W.inkMute)+'66':dow===0?W.crimsonL:(dark?W.bone:W.ink) }}>{d}</div>
-                {!isFuture && dData && (
+                <div style={{ fontFamily:FSERIF, fontSize:11, fontWeight:600, color:isSel?W.goldL:isOff?W.crimson:isFuture?(dark?W.boneMute:W.inkMute)+'66':dow===0?W.crimsonL:(dark?W.bone:W.ink) }}>{d}</div>
+                {isOff && !isSel && (
+                  <div style={{ fontSize:6, fontWeight:700, color:W.crimson, letterSpacing:0.5, lineHeight:1, marginTop:1 }}>OFF</div>
+                )}
+                {!isFuture && dData && !isOff && (
                   <>
                     <div style={{ fontFamily:FMONO, fontSize:7.5, fontWeight:700, color:isSel?W.goldL:(dark?W.bone:W.ink), marginTop:'auto', lineHeight:1 }}>{yenK(dData.total)}</div>
                     <div style={{ display:'flex', gap:1.5, marginTop:2 }}>
@@ -1249,6 +1286,9 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
                       })}
                     </div>
                   </>
+                )}
+                {!isFuture && dData && isOff && (
+                  <div style={{ fontFamily:FMONO, fontSize:7.5, fontWeight:700, color:W.crimson+'88', marginTop:'auto', lineHeight:1 }}>{yenK(dData.total)}</div>
                 )}
               </div>
             );
@@ -1272,23 +1312,41 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
               <div style={{ fontSize:11, color:dark?W.boneMute:W.inkMute }}>データなし</div>
             )}
           </div>
-          {/* この日に入力ボタン */}
-          {onEditDay && (
-            <div onClick={() => onEditDay(selDateStr)} style={{
-              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-              padding:'8px 12px', borderRadius:12, marginBottom:8,
-              background:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
-              color:'#fff', cursor:'pointer',
-              fontFamily:FSANS, fontSize:12, fontWeight:700, letterSpacing:1,
-              boxShadow:`0 4px 12px ${W.crimson}40`,
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
-                <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.6"/>
-              </svg>
-              この日に入力する
-            </div>
-          )}
+          {/* ボタン行: オフ日トグル + 入力ボタン */}
+          <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+            {filterPlayer && onOffDaysChange && (
+              <div onClick={() => handleToggleOffDate(selDateStr)} style={{
+                flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                padding:'8px 10px', borderRadius:12, cursor:'pointer',
+                background: playerOffDates.has(selDateStr)
+                  ? `linear-gradient(135deg,${W.crimson},${W.crimsonD})`
+                  : (dark?W.sumi2:'#F0EBE0'),
+                border: playerOffDates.has(selDateStr) ? 'none' : `0.5px solid ${dark?W.hairlineD:W.hairline}`,
+                color: playerOffDates.has(selDateStr) ? '#fff' : (dark?W.boneMute:W.inkMute),
+                fontFamily:FSANS, fontSize:11, fontWeight:700, letterSpacing:0.5,
+                boxShadow: playerOffDates.has(selDateStr) ? `0 4px 12px ${W.crimson}40` : 'none',
+                transition: 'all 0.15s',
+              }}>
+                {playerOffDates.has(selDateStr) ? '✕ オフ日を解除' : '☽ オフ日にする'}
+              </div>
+            )}
+            {onEditDay && (
+              <div onClick={() => onEditDay(selDateStr)} style={{
+                flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                padding:'8px 12px', borderRadius:12,
+                background:`linear-gradient(135deg, ${W.crimson}, ${W.crimsonD})`,
+                color:'#fff', cursor:'pointer',
+                fontFamily:FSANS, fontSize:12, fontWeight:700, letterSpacing:1,
+                boxShadow:`0 4px 12px ${W.crimson}40`,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+                  <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.6"/>
+                </svg>
+                この日に入力する
+              </div>
+            )}
+          </div>
           {/* Team view: show per-player breakdown when no filter */}
           {!filterPlayer && selData && selPlayerSales && selPlayerSales.length > 0 && (
             <>
@@ -1338,7 +1396,7 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay }) {
 }
 
 // ── Screen: 個人別 ─────────────────────────────────────────────────────────
-function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj }) {
+function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj, offDaysMap }) {
   const [mePlayer, setMePlayer] = useState(null);
   useEffect(() => { if (currentPlayer && !mePlayer) setMePlayer(currentPlayer); }, [currentPlayer]);
 
@@ -1376,9 +1434,18 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj }
   const monthly = mySales.reduce((a,s) => a+s.amount, 0);
   const goal    = mePlayer?.monthly_goal || 0;
   const pct     = goal > 0 ? Math.min(monthly/goal*100,100) : 0;
-  // Use AI projection if available (current month), otherwise linear
+  // Use AI projection if available (current month), otherwise linear (オフ日考慮)
   const aiProjected = (isCurMonth && aiProj && mePlayer) ? aiProj[mePlayer.name]?.projected_total : null;
-  const linearProjected = dayOfMonth > 0 && monthly > 0 ? Math.round(monthly/dayOfMonth*daysInMonth) : 0;
+  const linearProjected = useMemo(() => {
+    if (dayOfMonth <= 0 || monthly <= 0) return 0;
+    const playerOffDays = (offDaysMap && mePlayer) ? (offDaysMap[mePlayer.id] || []) : [];
+    const monthStartStr = `${monthPrefix}-01`;
+    const todayStr2 = `${monthPrefix}-${String(dayOfMonth).padStart(2,'0')}`;
+    const lastDayStr = `${monthPrefix}-${String(daysInMonth).padStart(2,'0')}`;
+    const elapsed  = workingDaysInRange(monthStartStr, todayStr2, playerOffDays);
+    const total    = workingDaysInRange(monthStartStr, lastDayStr, playerOffDays);
+    return elapsed > 0 && total > 0 ? Math.round(monthly / elapsed * total) : 0;
+  }, [monthly, dayOfMonth, daysInMonth, monthPrefix, mePlayer, offDaysMap]);
   const projected = aiProjected || linearProjected;
 
   // Rank
@@ -1575,7 +1642,7 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj }
 }
 
 // ── Screen: 設定 ───────────────────────────────────────────────────────────
-function ScreenSettings({ dark, setDark, players, teamGoal, onSaveTeamGoal, onRefresh }) {
+function ScreenSettings({ dark, setDark, players, teamGoal, onSaveTeamGoal, onRefresh, offDaysMap, onOffDaysChange }) {
   const [goalEdit, setGoalEdit] = useState(null);
   const [goalVal, setGoalVal]   = useState('');
   const [saving, setSaving]     = useState(false);
@@ -1591,6 +1658,7 @@ function ScreenSettings({ dark, setDark, players, teamGoal, onSaveTeamGoal, onRe
     setGoalEdit(null);
     onRefresh();
   };
+
 
   const Toggle = ({ on, onToggle }) => (
     <div onClick={onToggle} style={{ width:42, height:24, borderRadius:999, background:on?W.crimson:(dark?W.sumi3:W.paper2), position:'relative', cursor:'pointer', transition:'0.2s', boxShadow:on?`0 0 10px ${W.crimson}40`:'none' }}>
@@ -1738,6 +1806,7 @@ function App() {
   const [players, setPlayers]           = useState([]);
   const [sales, setSales]               = useState([]);
   const [teamGoal, setTeamGoal]         = useState(0);
+  const [offDaysMap, setOffDaysMap]     = useState({});
   const [loading, setLoading]           = useState(true);
   const [aiProj, setAiProj]             = useState(null);
   const [aiProjLoading, setAiProjLoading] = useState(false);
@@ -1748,14 +1817,18 @@ function App() {
   });
 
   const loadData = useCallback(async () => {
-    const [{ data:pl }, { data:sl }, { data:settings }] = await Promise.all([
+    const [{ data:pl }, { data:sl }, teamGoalRes, offDaysRes] = await Promise.all([
       db.from('players').select('*').eq('active', true).order('name'),
       db.from('sales').select('*').order('date', { ascending: false }).limit(5000),
-      db.from('settings').select('*').eq('key', 'team_monthly_goal').maybeSingle().then(r => ({ data: [r.data].filter(Boolean) })),
+      db.from('settings').select('*').eq('key', 'team_monthly_goal').maybeSingle(),
+      db.from('settings').select('*').eq('key', 'off_days').maybeSingle(),
     ]);
     if (pl) setPlayers(pl);
     if (sl) setSales(sl);
-    if (settings && settings[0]) setTeamGoal(Number(settings[0].value) || 0);
+    if (teamGoalRes.data) setTeamGoal(Number(teamGoalRes.data.value) || 0);
+    if (offDaysRes.data) {
+      try { setOffDaysMap(JSON.parse(offDaysRes.data.value) || {}); } catch(e) {}
+    }
     setLoading(false);
   }, []);
 
@@ -1812,11 +1885,11 @@ function App() {
 
       {/* Screen area */}
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>
-        {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData} recordDate={recordDate} setRecordDate={setRecordDate}/>}
+        {tab === 'rec'  && <ScreenRecord  dark={dark} players={players} sales={sales} currentPlayer={currentPlayer} setCurrentPlayer={handleSelectPlayer} onSaved={loadData} recordDate={recordDate} setRecordDate={setRecordDate} offDaysMap={offDaysMap}/>}
         {tab === 'rank' && <ScreenRanking dark={dark} sales={sales} players={players} loading={loading} teamGoal={teamGoal} aiProj={aiProj} aiProjLoading={aiProjLoading}/>}
-        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading} onEditDay={(d) => { setRecordDate(d); handleSetTab('rec'); }}/>}
-        {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer} aiProj={aiProj}/>}
-        {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData}/>}
+        {tab === 'cal'  && <ScreenCalendar dark={dark} sales={sales} players={players} loading={loading} onEditDay={(d) => { setRecordDate(d); handleSetTab('rec'); }} offDaysMap={offDaysMap} onOffDaysChange={setOffDaysMap}/>}
+        {tab === 'me'   && <ScreenPersonal dark={dark} sales={sales} players={players} loading={loading} currentPlayer={currentPlayer} aiProj={aiProj} offDaysMap={offDaysMap}/>}
+        {tab === 'set'  && <ScreenSettings dark={dark} setDark={setDark} players={players} teamGoal={teamGoal} onSaveTeamGoal={saveTeamGoal} onRefresh={loadData} offDaysMap={offDaysMap} onOffDaysChange={setOffDaysMap}/>}
         <BottomNav active={tab} dark={dark} onNav={handleSetTab}/>
       </div>
 
