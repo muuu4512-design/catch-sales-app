@@ -273,17 +273,16 @@ const halfStart = (dateStr) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${day < 16 ? '01' : '16'}`;
 };
 
-// Get Monday of the week containing the given date
-const weekStartMonday = (dateStr) => {
+// Get Sunday of the week containing the given date (週は日曜始まり)
+const weekStartSunday = (dateStr) => {
   const d = new Date(dateStr + 'T00:00:00');
   const dow = d.getDay(); // 0=Sun, 1=Mon, ...
-  const delta = dow === 0 ? -6 : 1 - dow; // shift to Monday
-  d.setDate(d.getDate() + delta);
+  d.setDate(d.getDate() - dow); // shift back to Sunday
   return toYMD(d);
 };
 // Get all weeks present in sales
 const allWeekStarts = (sales) => {
-  const set = new Set(sales.map(s => weekStartMonday(s.date)));
+  const set = new Set(sales.map(s => weekStartSunday(s.date)));
   return [...set].sort().reverse();
 };
 // Day-of-week filter for weekly ranking: exclude 金(5) and 土(6)
@@ -741,7 +740,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
   }, [sales]);
 
   const curMonthYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const curWeekKey = weekStartMonday(toYMD(now));
+  const curWeekKey = weekStartSunday(toYMD(now));
 
   // Default: most recent period with data, or current if data exists
   const defaultWeek  = allWeeks.includes(curWeekKey)   ? curWeekKey   : (allWeeks[0]  || curWeekKey);
@@ -769,7 +768,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
     if (next >= 0 && next < allMonths.length) setSelMonth(allMonths[next]);
   };
 
-  // Compute end of week (Sun) from Mon start
+  // Compute end of week (Sat) from Sun start
   const weekEnd = useMemo(() => {
     const d = new Date(activeWeek + 'T00:00:00');
     d.setDate(d.getDate() + 6);
@@ -778,7 +777,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
 
   const filtered = useMemo(() => {
     if (mode === 'week') {
-      // Mon-Sun week, EXCLUDING Fri & Sat
+      // Sun-Sat week, EXCLUDING Fri & Sat → effectively Sun〜Thu
       return sales.filter(s =>
         s.date >= activeWeek && s.date <= weekEnd && isWeeklyRankingDay(s.date)
       );
@@ -817,7 +816,7 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
   // Format period label
   const fmtMD = (ymd) => { const [,m,d] = ymd.split('-'); return `${parseInt(m)}/${parseInt(d)}`; };
   const periodLabel = mode === 'week'
-    ? `${fmtMD(activeWeek)} ─ ${fmtMD(weekEnd)} · 平日週ベース`
+    ? `${fmtMD(activeWeek)}(日) ─ ${fmtMD(weekEnd)}(土) · 日〜木集計`
     : `${activeMonth.replace('-','.')} · ${dayOfMonth}/${daysInMonth}日`;
 
   const canNavNewer = mode === 'week' ? allWeeks.indexOf(activeWeek) > 0 : allMonths.indexOf(activeMonth) > 0;
