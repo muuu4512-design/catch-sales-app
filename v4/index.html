@@ -1458,6 +1458,15 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj, 
     return mePlayer ? (sorted.findIndex(([p])=>p===mePlayer.name)+1) : 0;
   }, [sales, mePlayer, monthPrefix]);
 
+  // Store monthly breakdown
+  const storeMonthly = useMemo(() => {
+    const m = {};
+    for (const s of mySales) {
+      if (s.store) m[s.store] = (m[s.store]||0) + s.amount;
+    }
+    return STORES.map(st => ({ ...st, total: m[st.id]||0 })).filter(st => st.total > 0);
+  }, [mySales]);
+
   // Daily breakdown
   const dailyMap = useMemo(() => {
     const m = {};
@@ -1577,6 +1586,56 @@ function ScreenPersonal({ dark, sales, players, loading, currentPlayer, aiProj, 
               </div>
             </div>
           </div>
+
+          {/* Store monthly breakdown */}
+          {storeMonthly.length > 0 && (
+            <div style={{ padding:'0 16px 12px' }}>
+              <div style={{ padding:'0 0 6px', display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+                <div style={{ fontFamily:FSERIF, fontSize:12, fontWeight:600, color:dark?W.bone:W.ink, letterSpacing:3 }}>店舗別月計</div>
+                <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute }}>{monthPrefix.replace('-','.')}月</div>
+              </div>
+              <div style={{
+                background:dark?`linear-gradient(160deg,${W.sumi2},${W.sumi})`:`linear-gradient(160deg,#FFFCF5,${W.paper})`,
+                border:`0.5px solid ${dark?W.hairlineD:W.hairline}`, borderRadius:16, padding:'12px 14px',
+              }}>
+                {/* Stacked bar */}
+                <div style={{ display:'flex', height:8, borderRadius:4, overflow:'hidden', marginBottom:12, gap:1 }}>
+                  {storeMonthly.map(st => (
+                    <div key={st.id} style={{
+                      flex: st.total,
+                      background: st.color,
+                      borderRadius: 4,
+                      boxShadow: `0 0 6px ${st.color}60`,
+                    }}/>
+                  ))}
+                </div>
+                {/* Store rows */}
+                {storeMonthly.map((st, i) => {
+                  const pct = monthly > 0 ? Math.round(st.total / monthly * 100) : 0;
+                  return (
+                    <div key={st.id} style={{
+                      display:'flex', alignItems:'center', gap:10, paddingTop: i > 0 ? 8 : 0,
+                      borderTop: i > 0 ? `0.5px solid ${dark?W.hairlineD:W.hairline}` : 'none',
+                    }}>
+                      {/* Color dot + name */}
+                      <div style={{ display:'flex', alignItems:'center', gap:6, width:80, flexShrink:0 }}>
+                        <div style={{ width:8, height:8, borderRadius:'50%', background:st.color, boxShadow:`0 0 6px ${st.color}80`, flexShrink:0 }}/>
+                        <div style={{ fontSize:11, fontWeight:600, color:dark?W.bone:W.ink, fontFamily:FSANS }}>{st.name||st.id}</div>
+                      </div>
+                      {/* Mini bar */}
+                      <div style={{ flex:1, height:4, borderRadius:2, background:dark?W.sumi3:W.paper2, overflow:'hidden' }}>
+                        <div style={{ width:`${pct}%`, height:'100%', background:st.color, borderRadius:2 }}/>
+                      </div>
+                      {/* Pct */}
+                      <div style={{ fontSize:10, color:dark?W.boneMute:W.inkMute, fontFamily:FMONO, width:30, textAlign:'right', flexShrink:0 }}>{pct}%</div>
+                      {/* Amount */}
+                      <div style={{ fontFamily:FMONO, fontSize:13, fontWeight:700, color:dark?W.bone:W.ink, width:68, textAlign:'right', flexShrink:0 }}>{yen(st.total)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Daily rows */}
           <div style={{ padding:'0 16px 6px', display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
