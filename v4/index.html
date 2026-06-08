@@ -779,7 +779,11 @@ function ScreenRanking({ dark, sales, players, loading, teamGoal, aiProj, aiProj
     if (mode === 'week') {
       // Sun-Sat week, EXCLUDING Fri & Sat → effectively Sun〜Thu
       return sales.filter(s =>
-        s.date >= activeWeek && s.date <= weekEnd && isWeeklyRankingDay(s.date)
+        s.date >= activeWeek &&
+        s.date <= weekEnd &&
+        isWeeklyRankingDay(s.date) &&
+        s.player !== 'しょうや' &&
+        s.player !== 'ショーヤ'
       );
     } else {
       // Month: include all days
