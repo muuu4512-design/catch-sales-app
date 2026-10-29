@@ -123,6 +123,7 @@ const glassStyle = (dark) => dark ? {
 // ── Supabase ───────────────────────────────────────────────────────────────
 const SB_URL = 'https://jpjqdpzbaujxholvzlto.supabase.co';
 const SB_KEY = 'sb_publishable_j6hImkmNd2S1zXHDfSo4iw_DCF5nL0c';
+const AUTH_PASSWORD_SETUP = ['invite','recovery'].includes(new URLSearchParams(window.location.hash.slice(1)).get('type'));
 const db = window.supabase.createClient(SB_URL, SB_KEY);
 
 // ── オフ日考慮: 稼働日数カウント ────────────────────────────────────────────
@@ -406,6 +407,7 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
   const [amounts, setAmounts] = useState({ gochi:0, dosu:0, goro:0, uo:0 });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const dateInputRef = useRef(null);
 
   // Load existing sales for selected date+player
@@ -481,22 +483,17 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
   const handleSave = async () => {
     if (!currentPlayer || saving) return;
     setSaving(true);
-    const hs = halfStart(selDateStr);
-    const rows = STORES.filter(s => amounts[s.id] > 0).map(s => ({
-      date: selDateStr, player: currentPlayer.name,
-      store: s.id, amount: amounts[s.id], half_month_start: hs,
-    }));
-    if (rows.length === 0) { setSaving(false); return; }
-
-    // Delete existing for this date+player, then insert
-    await db.from('sales').delete().eq('date', selDateStr).eq('player', currentPlayer.name);
-    const { error } = await db.from('sales').insert(rows);
-    setSaving(false);
-    if (!error) {
+    setSaveError('');
+    try {
+      const { error } = await db.rpc('catch_save_day', {
+        p_player_id: currentPlayer.id, p_date: selDateStr, p_amounts: amounts,
+      });
+      if (error) throw error;
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-      onSaved();
-    }
+      await onSaved();
+    } catch (_) { setSaveError('保存結果を確認できませんでした。画面を更新して金額をご確認ください。'); }
+    finally { setSaving(false); }
   };
 
   const activeStoreObj = STORES.find(s => s.id === activeStore);
@@ -509,6 +506,8 @@ function ScreenRecord({ dark, players, sales, currentPlayer, setCurrentPlayer, o
           <PlayerChip player={currentPlayer} dark={dark} players={players} onSelect={setCurrentPlayer}/>
         }
       />
+
+      {saveError && <p role="alert" style={{ color:W.crimson, padding:'0 16px', fontSize:12 }}>{saveError}</p>}
 
       {/* Date strip: 5-day quick chips + 📅 native picker */}
       <div style={{ padding:'0 16px 8px' }}>
@@ -1095,6 +1094,8 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay, offDaysMap, 
   const [viewMonth, setViewMonth] = useState(now.getMonth()+1);
   const [selectedDay, setSelectedDay] = useState(now.getDate());
   const [filterPlayer, setFilterPlayer] = useState(null); // null = チーム全体
+  const [offSaving, setOffSaving] = useState(false);
+  const [offError, setOffError] = useState('');
 
   const changeMonth = (delta) => {
     let y = viewYear, m = viewMonth + delta;
@@ -1120,14 +1121,20 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay, offDaysMap, 
   }, [filterPlayer, offDaysMap]);
 
   const handleToggleOffDate = async (dateStr) => {
-    if (!filterPlayer) return;
+    if (!filterPlayer || offSaving) return;
     const current = (offDaysMap && offDaysMap[filterPlayer.id]) ? offDaysMap[filterPlayer.id] : [];
     const next = current.includes(dateStr)
       ? current.filter(d => d !== dateStr)
       : [...current, dateStr].sort();
     const newMap = { ...(offDaysMap||{}), [filterPlayer.id]: next };
-    onOffDaysChange(newMap);
-    await db.from('settings').upsert({ key: 'off_days', value: JSON.stringify(newMap) }, { onConflict: 'key' });
+    setOffSaving(true);
+    setOffError('');
+    try {
+      const {error} = await db.rpc('catch_set_off_day', {p_player_id:filterPlayer.id, p_date:dateStr, p_off:!current.includes(dateStr)});
+      if (error) throw error;
+      onOffDaysChange(newMap);
+    } catch (_) { setOffError('オフ日の保存結果を確認できません。画面を更新してください。'); }
+    finally { setOffSaving(false); }
   };
 
   // Group sales by date for this month
@@ -1192,6 +1199,8 @@ function ScreenCalendar({ dark, sales, players, loading, onEditDay, offDaysMap, 
         }
       />
 
+      {offError && <p role="alert" style={{ color:W.crimson, padding:'0 16px', fontSize:12 }}>{offError}</p>}
+      {offSaving && <p role="status" style={{ padding:'0 16px', fontSize:12 }}>保存中…</p>}
       {/* Player picker chips */}
       <div style={{ padding:'0 0 10px', overflowX:'auto' }}>
         <div style={{ display:'flex', gap:6, padding:'0 16px', minWidth:'max-content' }}>
@@ -1858,7 +1867,111 @@ function SettingRow({ dark, icon, label, sub, right, accent, onPress }) {
 }
 
 // ── App Root ───────────────────────────────────────────────────────────────
+function StaffSignIn({ checking, message }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { error: loginError } = await db.auth.signInWithPassword({ email:email.trim(), password });
+      if (loginError) setError('ログインできませんでした。メールアドレスとパスワードを確認してください。');
+    } catch (_) { setError('通信できませんでした。時間をおいてお試しください。'); }
+    finally { setPassword(''); setBusy(false); }
+  };
+  return <main style={{ minHeight:'100dvh', display:'grid', placeItems:'center', padding:24, background:'#f4f5f7', color:'#17202a', fontFamily:FSANS }}>
+    <form onSubmit={submit} style={{ width:'100%', maxWidth:360, display:'grid', gap:16 }}>
+      <h1 style={{ margin:0, fontSize:30 }}>CATCH</h1>
+      <p style={{ margin:0 }}>スタッフログイン</p>
+      {checking ? <p role="status">ログイン状態を確認しています…</p> : <>
+        <label style={{ display:'grid', gap:6 }}>メールアドレス<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)} style={{ padding:12, minWidth:0, fontSize:16 }}/></label>
+        <label style={{ display:'grid', gap:6 }}>パスワード<input type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} style={{ padding:12, minWidth:0, fontSize:16 }}/></label>
+        <button type="submit" disabled={busy} style={{ padding:14, fontSize:16, border:0, borderRadius:6, background:'#244e48', color:'#fff', cursor:'pointer' }}>{busy?'ログイン中…':'ログイン'}</button>
+        {(error || message) && <p role="alert" style={{ color:'#a52a35', margin:0 }}>{error || message}</p>}
+      </>}
+    </form>
+  </main>;
+}
+
+function StaffPasswordSetup({ onComplete }) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async event => {
+    event.preventDefault();
+    if (busy) return;
+    if (password.length < 12 || password !== confirmation) { setError('12文字以上のパスワードを、確認欄にも同じ内容で入力してください。'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      const {error:saveError} = await db.auth.updateUser({password});
+      if (saveError) throw saveError;
+      setPassword(''); setConfirmation(''); onComplete();
+    } catch (_) { setError('パスワードを設定できませんでした。時間をおいてお試しください。'); }
+    finally { setBusy(false); }
+  };
+  return <main style={{ minHeight:'100dvh', display:'grid', placeItems:'center', padding:24, background:'#f4f5f7', color:'#17202a', fontFamily:FSANS }}>
+    <form onSubmit={submit} style={{ width:'100%', maxWidth:360, display:'grid', gap:16 }}>
+      <h1 style={{ margin:0, fontSize:30 }}>CATCH</h1><p>パスワードの設定</p>
+      <label style={{ display:'grid', gap:6 }}>新しいパスワード<input type="password" autoComplete="new-password" required minLength={12} value={password} onChange={e=>setPassword(e.target.value)} style={{ padding:12, minWidth:0, fontSize:16 }}/></label>
+      <label style={{ display:'grid', gap:6 }}>パスワードの確認<input type="password" autoComplete="new-password" required minLength={12} value={confirmation} onChange={e=>setConfirmation(e.target.value)} style={{ padding:12, minWidth:0, fontSize:16 }}/></label>
+      <button type="submit" disabled={busy} style={{ padding:14, fontSize:16, border:0, borderRadius:6, background:'#244e48', color:'#fff' }}>{busy?'設定中…':'設定して進む'}</button>
+      {error && <p role="alert" style={{ color:'#a52a35' }}>{error}</p>}
+    </form>
+  </main>;
+}
+
 function App() {
+  const [session, setSession] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [allowed, setAllowed] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [message, setMessage] = useState('');
+  const [passwordSetup, setPasswordSetup] = useState(AUTH_PASSWORD_SETUP);
+  useEffect(() => {
+    let active = true;
+    db.auth.getSession().then(({data,error}) => {
+      if (!active) return;
+      setSession(error?null:data.session);
+      setReady(true);
+    }).catch(()=>{ if(active) { setReady(true); setMessage('ログイン状態を確認できませんでした。'); } });
+    const {data:{subscription}} = db.auth.onAuthStateChange((event,next) => {
+      if (!active) return;
+      setAllowed(false);
+      setChecking(true);
+      setSession(next);
+      if (event === 'PASSWORD_RECOVERY') setPasswordSetup(true);
+      setReady(true);
+      if (!next) localStorage.removeItem('currentPlayer');
+    });
+    return ()=>{ active=false; subscription.unsubscribe(); };
+  },[]);
+  useEffect(() => {
+    let active = true;
+    if (!ready) return;
+    if (!session) { setAllowed(false); setChecking(false); return; }
+    setChecking(true);
+    db.rpc('catch_is_staff').then(async ({data,error}) => {
+      if (!active) return;
+      if (error || data !== true) {
+        setAllowed(false);
+        setMessage('利用権限を確認できません。管理者にスタッフ登録をご確認ください。');
+        await db.auth.signOut();
+      } else { setAllowed(true); setMessage(''); }
+      if (active) setChecking(false);
+    }).catch(()=>{ if(active) { setAllowed(false); setChecking(false); setMessage('利用権限を確認できませんでした。再ログインしてください。'); } });
+    return ()=>{ active=false; };
+  },[ready,session]);
+  if (allowed && session && passwordSetup) return <StaffPasswordSetup onComplete={()=>setPasswordSetup(false)}/>;
+  return allowed && session ? <StaffApp key={session.user.id}/> : <StaffSignIn checking={checking} message={message}/>;
+}
+
+function StaffApp() {
   const [tab, setTab]                   = useState(() => localStorage.getItem('lastTab') || 'rank');
   const [dark, setDark]                 = useState(() => {
     const stored = localStorage.getItem('dark');
@@ -1889,7 +2002,7 @@ function App() {
     if (sl) setSales(sl);
     if (teamGoalRes.data) setTeamGoal(Number(teamGoalRes.data.value) || 0);
     if (offDaysRes.data) {
-      try { setOffDaysMap(JSON.parse(offDaysRes.data.value) || {}); } catch(e) {}
+      try { setOffDaysMap((typeof offDaysRes.data.value === 'string' ? JSON.parse(offDaysRes.data.value) : offDaysRes.data.value) || {}); } catch(e) {}
     }
     setLoading(false);
   }, []);
@@ -1944,6 +2057,7 @@ function App() {
     <div className={dark?'mesh-dark':'mesh-light'} style={{ width:'100%', height:'100%', color, fontFamily:FSANS, position:'relative', overflow:'hidden' }}>
       {/* Status bar safe area */}
       <div style={{ height:'env(safe-area-inset-top,44px)' }}/>
+      <button onClick={()=>db.auth.signOut()} aria-label="ログアウト" style={{ position:'absolute', right:12, top:'max(8px, env(safe-area-inset-top))', zIndex:20, border:0, background:'transparent', color, padding:8, cursor:'pointer' }}>ログアウト</button>
 
       {/* Screen area */}
       <div style={{ position:'absolute', top:'env(safe-area-inset-top,44px)', left:0, right:0, bottom:0, overflow:'hidden' }}>

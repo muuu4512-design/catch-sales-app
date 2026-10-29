@@ -1,5 +1,5 @@
 /* キャッチ売上アプリ Service Worker */
-var CACHE = 'catch-sales-v3';
+var CACHE = 'catch-sales-v4-auth';
 var DATA_CACHE = 'catch-sales-data-v1';
 var STATIC = [
   '/catch-sales-app/',
@@ -36,6 +36,10 @@ self.addEventListener('activate', function(e) {
 
 self.addEventListener('fetch', function(e) {
   var url = e.request.url;
+  if (new URL(url).hostname.endsWith('.supabase.co') || e.request.method !== 'GET') {
+    e.respondWith(fetch(e.request, { cache: 'no-store' }));
+    return;
+  }
 
   /* GAS API → stale-while-revalidate（キャッシュ即返し + 裏でnetwork更新） */
   if (url.indexOf('script.google.com') !== -1 && e.request.method === 'GET') {
